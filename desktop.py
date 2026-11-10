@@ -15,11 +15,11 @@ sys.path.insert(0,str(ROOT))
 from pipeline import CONFIG, Job, read_model
 if CONFIG.get('qt_packages'):
     sys.path.insert(0,CONFIG['qt_packages'])
-from PySide6.QtCore import Qt, QTimer, QObject, Signal, QThread, QUrl, QSize
+from PySide6.QtCore import Qt, QTimer, QObject, Signal, QThread, QUrl, QSize, QEvent
 from PySide6.QtGui import QSurfaceFormat, QImageReader, QPixmap
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QLabel,QPushButton,QLineEdit,QFileDialog,QSplitter,QSpinBox,QDoubleSpinBox,
-    QComboBox,QCheckBox,QGroupBox,QFormLayout,QSlider,QProgressBar,QPlainTextEdit,QScrollArea,QMessageBox,QDockWidget)
+    QComboBox,QCheckBox,QGroupBox,QFormLayout,QSlider,QProgressBar,QPlainTextEdit,QScrollArea,QMessageBox,QDockWidget,QAbstractSpinBox,QTextEdit)
 from PySide6.QtMultimedia import QMediaPlayer,QAudioOutput,QVideoSink
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import QStackedWidget
@@ -115,6 +115,7 @@ class Window(QMainWindow):
         self.points_toggle.toggled.connect(self.toggle_points); self.path_toggle.toggled.connect(self.toggle_path)
         views.setSizes([420,700]); split.setSizes([300,1200])
         timeline=QHBoxLayout(); self.play=self.button('▶ Play',self.toggle_play,timeline)
+        self.play.setToolTip('Play / pause (Space)')
         self.slider=QSlider(Qt.Horizontal); self.slider.setRange(1,1); self.slider.valueChanged.connect(self.seek); timeline.addWidget(self.slider,1)
         self.time_label=QLabel('—'); self.time_label.setMinimumWidth(160); timeline.addWidget(self.time_label); work_layout.addLayout(timeline)
         mode=QHBoxLayout(); self.button('Source video',self.preview_source,mode); self.button('Solved frames',self.preview_solved,mode)
@@ -137,6 +138,21 @@ QPushButton{background:#283346;border:1px solid #40516a;border-radius:5px;paddin
 QPushButton#primary{background:#246cb0;border-color:#498fce;font-weight:bold;} QGroupBox{border:1px solid #354153;border-radius:6px;margin-top:12px;padding-top:14px;}
 QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#202d3d;padding:12px;border-radius:5px;} QSplitter::handle{background:#293342;}''')
         QTimer.singleShot(150,self.sample)
+        QApplication.instance().installEventFilter(self)
+
+    def eventFilter(self,receiver,event):
+        if (event.type() in (QEvent.ShortcutOverride,QEvent.KeyPress,QEvent.KeyRelease)
+                and event.key()==Qt.Key_Space and event.modifiers()==Qt.NoModifier
+                and isinstance(receiver,QWidget) and (receiver is self or self.isAncestorOf(receiver))
+                and QApplication.activeModalWidget() is None and QApplication.activePopupWidget() is None):
+            focus=QApplication.focusWidget()
+            editing=isinstance(focus,(QLineEdit,QAbstractSpinBox,QComboBox)) or (
+                isinstance(focus,(QPlainTextEdit,QTextEdit)) and not focus.isReadOnly())
+            if not editing:
+                if event.type()==QEvent.KeyPress and not event.isAutoRepeat() and self.viewport.drag is None:
+                    self.toggle_play()
+                event.accept();return True
+        return super().eventFilter(receiver,event)
 
     def button(self,text,callback,layout):
         b=QPushButton(text); b.clicked.connect(callback)

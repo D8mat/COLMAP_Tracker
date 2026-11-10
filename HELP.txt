@@ -94,6 +94,9 @@ moving objects; right/middle drag pans. The corner gizmo still changes views.
 Image overlays and Blender export use the same edited transforms.
 
 CAMERA KEYFRAME GRAPH
+Space toggles playback in Source video and Solved frames. It also works when
+the 3D viewport or timeline has focus. Text/numeric inputs keep normal typing;
+holding Space does not repeatedly toggle playback.
 Below the timeline, enable Keyframe graph. Choose Position XYZ, Translation
 jump (units/frame), or Rotation jump (degrees/frame). Dashed = original solve;
 solid = current result; amber marks = corrected frames. Click a frame to select

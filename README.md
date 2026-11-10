@@ -101,6 +101,11 @@ With no fixture configured, the application opens with an empty workspace.
 
 ## Camera keyframe graph and floor grid
 
+Press **Space** to play/pause either source video or solved-frame playback,
+including while the 3D viewport or timeline has focus. Text/numeric inputs,
+combo boxes and dialogs keep their usual keyboard behavior. Holding Space
+does not repeatedly toggle playback.
+
 Enable **Keyframe graph** below the views to inspect camera motion. Choose
 **Position XYZ**, **Translation jump** (reconstruction units per frame), or
 **Rotation jump** (degrees per frame). Dashed curves show the original solve;
