@@ -1,0 +1,94 @@
+COLMAP Tracker — standalone desktop application
+
+START
+Double-click Start_Tracker.cmd. It opens a dedicated PySide6 application with
+an embedded OpenGL viewport, without the Blender interface. The prepared
+SCENES example loads automatically. Its original files remain unchanged.
+
+WORKSPACE
+Left: tracking settings and output directory.
+Middle: original video or solved image sequence.
+Right: colored point cloud, camera trajectory and current camera, with Z up.
+Bottom: timeline, playback and processing log.
+Left drag orbits; right/middle drag pans; wheel zooms. Fit scene resets the view.
+Points and Camera path toggles control visibility. Settings panel can scroll.
+
+NEW TRACKING
+Choose Open video, set COLMAP/GLOMAP, FPS, image size and GPU, then Start tracking.
+First seconds = 0 processes the entire video; 8 is useful for a short test.
+A static mask uses black to exclude and white to retain pixels; dimensions
+must match the source frames. Moving video masks are not implemented.
+Stop terminates the current process and retains partial output.
+Every run has a new project directory, settings.json and tracking.log.
+Failed runs are not marked complete. The largest disconnected model is loaded.
+
+PLAYBACK / IMPORT
+Source video plays the original clip, muted. Solved frames use the extracted
+sequence at Tracking FPS. Unregistered frames display no solved camera.
+Tracking FPS resamples to an integer rate; it can differ from the source rate.
+Import TXT model loads cameras.txt, images.txt and points3D.txt. Numbered frame
+names are required. Set Import FPS before loading an external reconstruction.
+Our project folders read FPS from settings.json. The prepared scene uses
+30000/1001 fps. Missing images do not prevent 3D preview.
+
+EXPORT
+Export .blend runs Blender in the background without opening its interface.
+It saves native point geometry, camera animation and trajectory. Images stay
+linked to the project folder. Interpolation between keyframes is not a solve.
+The standalone point renderer is not embedded in the Blender file.
+
+DEPENDENCIES / LIMITATIONS
+This is a working prototype, not a packaged portable executable. config.json
+uses existing RGBMoCap Python/PySide6 packages and existing COLMAP 3.12.3,
+GLOMAP, FFmpeg and Blender executables. No RGBMoCap files or packages are changed.
+Blender is needed only for .blend export. OpenGL 3.3 is required for 3D preview.
+Point preview is capped at 200,000 points; full reconstruction output is kept.
+Z-up conversion is consistent for geometry and cameras; it is not physical
+ gravity estimation or automatic ground-plane alignment.
+The old sample has original distorted frames; new solves use undistorted ones.
+Manual 2D track editing and moving-object tracking are not implemented.
+The old Blender prototype remains in tracker.py. The standard launcher now
+starts desktop.py.
+
+REFERENCES
+https://github.com/colmap/colmap
+https://colmap.github.io/format.html
+Optional importer (not installed):
+https://github.com/SBCV/Blender-Addon-Photogrammetry-Importer
+
+SCENE TOOLS
+Click the corner axis gizmo (+/-X, +/-Y, +/-Z) to switch to an orthographic view.
+Dragging in Orbit returns to perspective. Z remains the world up reference.
+Scene & objects opens the transform panel. Choose Whole scene to move/rotate/
+scale the reconstruction, camera, trajectory and all added objects together.
+Position/Rotation XYZ fields are exact; Move and Rotate modes allow left-drag
+editing of the selected target. Right-drag pans the viewport without editing.
+Whole-scene rotation uses the reconstruction origin as pivot. Object transforms
+are local to that scene root. Use Reset transform to restore the selected target.
+Add Cube or Cone, then select it in Transform target. The cone tip points down
+(-Z), and the object's origin/pivot is exactly at its tip (local 0,0,0).
+Save scene layout stores transforms and primitives as JSON; Load restores them.
+The original reconstruction files remain unchanged. Export .blend includes
+all objects and transforms under Tracker Scene Root.
+
+OBJECT OVERLAY
+Object overlay shows the added objects in solved images and matching source
+video. Its slider controls opacity. Projection uses the solved camera and lens
+model, including supported radial/OpenCV distortion. Missing camera poses have
+no overlay. The scene-root transform affects camera and geometry together, so
+moving Whole scene deliberately preserves image alignment. Move an individual
+object to change its placement in the image. This is a preview overlay without
+occlusion against real-world objects; sparse points do not provide a depth mesh.
+
+DIRECT SELECTION AND TRANSFORM GIZMOS
+Click a cube or cone in the 3D viewport to select the nearest object surface.
+Selection is synchronized with the Scene & objects panel and shows a gizmo
+at the actual origin (the tip for cones). New objects start in Move mode.
+G / Move: drag a colored X, Y or Z arrow to translate along that axis only.
+R / Rotate: drag a colored ring to rotate around that axis and object origin.
+Global uses world axes; Local uses the object's rotated axes. Select this in
+Scene & objects > Gizmo axes. Parent scene rotation and scale are respected.
+Escape during a drag restores the transform and preserves selection.
+Clicking empty space selects Whole scene. Dragging empty space orbits without
+moving objects; right/middle drag pans. The corner gizmo still changes views.
+Image overlays and Blender export use the same edited transforms.

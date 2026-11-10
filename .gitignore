@@ -1,0 +1,31 @@
+# Machine-specific paths and user projects
+/config.json
+/projects/
+/validation/
+/scene_layouts/
+/.venv/
+/.setup/
+/release_check/
+/release_check.zip
+/sample_project/
+# Generated media, scenes and diagnostics
+*.blend
+*.blend[0-9]*
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.m4v
+*.png
+*.jpg
+*.jpeg
+*.db
+*.db-*
+*.bin
+*.log
+/export_request*.json
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+Thumbs.db

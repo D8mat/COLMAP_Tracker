@@ -1,0 +1,9 @@
+{
+  "colmap": "colmap.exe",
+  "glomap": "glomap.exe",
+  "ffmpeg": "ffmpeg.exe",
+  "blender": "blender.exe",
+  "python": ".venv/Scripts/pythonw.exe",
+  "qt_packages": "",
+  "sample_project": ""
+}

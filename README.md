@@ -1,0 +1,150 @@
+# COLMAP Tracker
+
+Experimental Windows desktop application for video camera tracking with COLMAP.
+The application has its own PySide6 interface and embedded OpenGL viewport.
+Blender runs in the background only when exporting a `.blend` file.
+
+## Features
+
+- Video preview, reconstructed image sequence and synchronized camera timeline.
+- Colored sparse point cloud, camera trajectory and Z-up orbit navigation.
+- Clickable ±X/±Y/±Z orientation gizmo with orthographic views.
+- Click-to-select cubes and cones, XYZ move arrows and rotation rings.
+- Global/local gizmo axes, whole-scene transforms, numeric editing and JSON layouts.
+- Downward-facing cones with their origin at the tip.
+- Camera-calibrated object overlay in the image/video pane, with adjustable opacity.
+- COLMAP/GLOMAP pipeline controls, static masks, progress, logs and cancellation.
+- Blender export with camera animation, points, primitives and a shared scene root.
+
+## Requirements
+
+- Windows, Python **3.10 or 3.11**, and an OpenGL 3.3-capable graphics driver.
+- COLMAP: this application has been tested with **3.12.3**. CLI option names may
+  differ in other versions. Download from [COLMAP releases](https://github.com/colmap/colmap/releases).
+- FFmpeg for video-frame extraction.
+- Optional GLOMAP executable for the global solver.
+- Optional Blender **5.2** for `.blend` export (the tested version).
+
+Executables, third-party libraries, example videos and reconstructions are not
+bundled. GPU reconstruction also requires a compatible COLMAP build and driver.
+
+## Setup
+
+1. Clone this repository.
+2. Install Python 3.10 or 3.11 with the Windows `py.exe` launcher.
+3. Run `Setup.cmd`. It creates `.venv`, installs the pinned dependencies and
+   copies `config.example.json` to `config.json` if no configuration exists.
+4. Edit `config.json`: set the paths for `colmap`, `ffmpeg`, and optionally
+   `glomap` and `blender`. An executable on `PATH` can use its executable name.
+5. Run `Start_Tracker.cmd`.
+
+Paths with spaces are supported. Keep each executable's DLLs and support files
+in its original distribution folder. Relative configuration paths resolve against
+the application directory. The launcher uses the configured `python` path.
+
+`qt_packages` is normally empty. It is an optional directory containing PySide6
+and shiboken6 when reusing an existing compatible Python environment. RGBMoCap is
+**not required** by the normal virtual-environment setup.
+
+`config.json` is local and Git-ignored. Do not put machine-specific paths into
+the shared example. Setup preserves existing configuration.
+
+## Workflow
+
+1. Choose **Open video**.
+2. Set the solver, Tracking FPS, maximum image size and GPU use. Set **First
+   seconds** to a short duration for testing, or `0` for the full clip.
+3. Click **Start tracking**. Each run gets its own project folder.
+4. On completion, inspect **Solved frames**, the camera path and point cloud.
+5. Open **Scene & objects** to add primitives and edit transforms.
+6. Export `.blend`, or save the scene layout as JSON.
+
+**Stop** terminates the current subprocess and keeps partial output. Consult
+`tracking.log` for failures. A failed run is not marked complete. The viewer
+loads the largest disconnected reconstruction, rather than merging components.
+
+## Viewport and editing
+
+| Action | Control |
+| --- | --- |
+| Select primitive | Click its surface in the 3D viewport |
+| Move | `G` or **Move**, then drag an axis arrow |
+| Rotate | `R` or **Rotate**, then drag a rotation ring |
+| Cancel current transform | `Esc` while dragging |
+| Change transform axes | **Scene & objects → Gizmo axes → Global/Local** |
+| Select whole scene | Click empty space, or choose **Whole scene** in the panel |
+| Orbit | Drag empty space with the left mouse button |
+| Pan / zoom | Right or middle drag / mouse wheel |
+| Axis-aligned view | Click the corner orientation gizmo |
+| Reset view | **Fit scene** |
+
+Keyboard shortcuts apply while the viewport has focus. The cone's downward tip
+is its local origin. Whole-scene transforms include the camera, trajectory,
+points and added objects. As a result, these transforms preserve image alignment;
+move an individual object to change its placement in the overlay.
+
+The image overlay uses the solved camera calibration. It does not occlude virtual
+objects behind real-world objects; sparse points are not a scene depth mesh.
+
+## Existing models
+
+**Import TXT model** accepts a folder with `cameras.txt`, `images.txt` and
+`points3D.txt`. Image filenames must end with a frame number, such as
+`frame_000001.jpg`. Choose the corresponding image directory if it is not found.
+Set **Import FPS** before loading an external model. App-generated project folders
+recover their tracking rate from `settings.json`.
+
+The optional **Prepared scene** button uses a locally configured `sample_project`
+with `04 SCENES/IMG_2284_nonHDR/sparse`, its sibling `images`, and
+`02 VIDEOS/IMG_2284_nonHDR.mov`. This developer fixture is not distributed.
+With no fixture configured, the application opens with an empty workspace.
+
+## Limitations
+
+- Tracking FPS resamples video to an integer rate; it need not equal source FPS.
+- Missing registered poses are not solved cameras. Interpolation in exported
+  animation is not a new camera solve.
+- The point preview is capped at 200,000 points. Original model files are retained.
+- Z-up is a coordinate conversion, not gravity estimation or automatic ground alignment.
+- Only static image masks are supported: black excludes, white retains pixels.
+- Manual 2D track editing, moving-object tracking and dense reconstruction are not implemented.
+- Blender exports link to image sequences; the `.blend` alone is not a self-contained media bundle.
+- GLOMAP is wired into the pipeline but its reconstruction run has not been validated here.
+- This is a source prototype, not a packaged portable executable.
+
+## Validation
+
+Run the portable core tests with:
+
+```powershell
+.venv\Scripts\python.exe -m unittest test_core
+```
+
+The cancellation test requires configured FFmpeg and COLMAP; otherwise it skips.
+Run real interactive OpenGL picking/gizmo tests with:
+
+```powershell
+.venv\Scripts\python.exe validate_manipulators.py
+```
+
+Other `validate_*.py` scripts are developer integration checks using the optional
+local `IMG_2284_nonHDR` fixture. They require an interactive Windows desktop;
+some run reconstruction or Blender and write output into `validation/`.
+
+Verified during development: source-video playback, a 1,349-pose reconstruction,
+a new 8-second COLMAP run with 24 registered cameras, calibrated primitive overlay,
+XYZ gizmo drags/rotations, cancellation, and Blender export preserving scene-root
+transforms and cone-tip origins. Fresh-install setup is separate from those tests.
+
+## Source layout
+
+- `desktop.py`: application UI, video and processing controls.
+- `desktop_viewport.py`, `manipulation.py`: OpenGL rendering, picking and gizmos.
+- `scene_editor.py`, `scene_geometry.py`, `image_overlay.py`: primitives and calibration.
+- `pipeline.py`: subprocess pipeline and COLMAP text-model reader.
+- `export_desktop.py`, `tracker.py`: background Blender export and the earlier native Blender prototype.
+
+The importer is implemented independently from the
+[COLMAP output format](https://colmap.github.io/format.html).
+The optional [Blender Photogrammetry Importer](https://github.com/SBCV/Blender-Addon-Photogrammetry-Importer)
+is not bundled or installed. External tools and dependencies retain their own licenses.
