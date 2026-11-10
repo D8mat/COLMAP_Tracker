@@ -12,6 +12,7 @@ def check():
     try:
         assert time.monotonic()<deadline,'Video overlay timeout'
         if stage==0 and w.poses and w.loader is None:
+            w.mesh_toggle.setChecked(False);w.cloud_toggle.setChecked(False)
             item=w.viewport.add_primitive('Cone');m=w.viewport.pose
             item['position']=(m[:3,:3]@np.array([0,0,-5])+m[:3,3]).tolist();item['scale']=.4
             w.preview_source();w.player.play();stage=1

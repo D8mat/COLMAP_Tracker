@@ -54,10 +54,13 @@ def load_cloud(mesh):
         DRAW = bpy.types.SpaceView3D.draw_handler_add(draw_cloud, (), 'WINDOW', 'POST_VIEW')
 
 
-def import_model(folder, images, fps):
+def import_model(folder, images, fps, camera_corrections=None):
     cameras, poses, points = read_model(folder)
     if not poses:
         raise ValueError('This model has no registered cameras.')
+    from camera_track import CameraTrack,camera_matrix
+    if camera_corrections:
+        CameraTrack(poses).load_document(camera_corrections)
     supported = {'SIMPLE_PINHOLE', 'SIMPLE_RADIAL', 'RADIAL', 'PINHOLE', 'OPENCV'}
     for model, w, h, p in cameras.values():
         if model not in supported:
@@ -81,15 +84,11 @@ def import_model(folder, images, fps):
     cam.rotation_mode = 'QUATERNION'
     cam.data.display_size = 0.3
     scene.camera = cam
-    # COLMAP world -> camera (+Z forward, +Y down) to Blender camera (-Z, +Y).
-    flip = Matrix.Diagonal((1, -1, -1, 1))
+    # Shared Z-up conversion includes optional non-destructive camera corrections.
     previous = None
     positions = []
     for pose in poses:
-        rotation = Quaternion(pose['q']).to_matrix()
-        world_to_camera = rotation.to_4x4()
-        world_to_camera.translation = Vector(pose['t'])
-        matrix = WORLD_FROM_COLMAP @ world_to_camera.inverted() @ flip
+        matrix = Matrix(camera_matrix(pose).tolist())
         cam.location = matrix.translation
         quat = matrix.to_quaternion()
         if previous is not None and previous.dot(quat) < 0:

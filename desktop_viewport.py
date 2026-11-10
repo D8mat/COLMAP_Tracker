@@ -10,18 +10,9 @@ import copy
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtOpenGL import QOpenGLFunctions_3_3_Core, QOpenGLShaderProgram, QOpenGLShader, QOpenGLBuffer, QOpenGLVertexArrayObject
 
-WORLD = np.array([[1,0,0],[0,0,1],[0,-1,0]], dtype=np.float64)
-
-
-def camera_matrix(pose):
-    w,x,y,z = np.array(pose['q']) / np.linalg.norm(pose['q'])
-    r = np.array([[1-2*(y*y+z*z),2*(x*y-z*w),2*(x*z+y*w)],
-                  [2*(x*y+z*w),1-2*(x*x+z*z),2*(y*z-x*w)],
-                  [2*(x*z-y*w),2*(y*z+x*w),1-2*(x*x+y*y)]])
-    m = np.eye(4)
-    m[:3,:3] = WORLD @ r.T @ np.diag([1,-1,-1])
-    m[:3,3] = WORLD @ (-r.T @ np.array(pose['t']))
-    return m
+from camera_track import WORLD,camera_matrix
+from mesh_data import triangle_buffer
+from overlay_renderer import primitive_mesh
 
 
 class AxisGizmo(QWidget):
@@ -66,6 +57,8 @@ class ManipulatorOverlay(QWidget):
 
 
 class Viewport(QOpenGLWidget):
+    floor_spacing=1.
+    floor_height=0.
     edited=Signal()
     mode_changed=Signal(str)
     def __init__(self):
@@ -82,6 +75,16 @@ class Viewport(QOpenGLWidget):
         self.view_projection=None;self.handles=[];self.drag=None;self.hover_axis=None
         self.gizmo_space='Global';self.press_point=None;self.press_hit=None;self.orbit_drag=False
         self.cancelled_drag=False
+        self.mesh=None;self.mesh_path=None;self.show_mesh=True;self.shading='Vertex color';self.smooth_mesh=True;self._mesh_preview=None;self._mesh_preview_key=None
+
+    def set_mesh(self,mesh):
+        self.mesh=mesh;self.mesh_path=mesh.get('path') if mesh else None;self._mesh_preview=None;self._mesh_preview_key=None;self.update()
+
+    def mesh_preview(self):
+        key=(id(self.mesh),self.shading,self.smooth_mesh)
+        if key!=self._mesh_preview_key:
+            self._mesh_preview=triangle_buffer(self.mesh,self.shading,self.smooth_mesh);self._mesh_preview_key=key
+        return self._mesh_preview
 
     def set_mode(self,mode):
         self.mode=mode;self.handles=[];self.update()
@@ -216,7 +219,7 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
                 raise RuntimeError(self.program.log())
             self.vao = QOpenGLVertexArrayObject(); self.vao.create()
             self.buffers = {}
-            for key in ('points','path','lines','camera','objects'):
+            for key in ('points','path','lines','camera','objects','surface'):
                 b = QOpenGLBuffer(); b.create(); self.buffers[key] = b
             self.ready = True
             self.context().aboutToBeDestroyed.connect(self.cleanup)
@@ -253,6 +256,11 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
         self.pose = camera_matrix(pose) if pose else None
         self.update()
 
+    def update_camera_path(self,poses):
+        self.path[:,:3]=np.array([camera_matrix(p)[:3,3] for p in poses])
+        self.dirty=True
+        self.update()
+
     def draw_buffer(self, key, data, mode, upload=True):
         self.vao.bind(); b = self.buffers[key]; b.bind()
         if upload:
@@ -277,18 +285,24 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
             self.view_projection=np.array((proj*view).copyDataTo(),dtype=float).reshape(4,4)
             self.program.bind(); self.program.setUniformValue(self.program.uniformLocation('mvp'),proj*view)
             g.glUniform1f(self.program.uniformLocation('size'),float(self.point_size*self.devicePixelRatioF()))
-            extent = max(1,10**math.floor(math.log10(max(.01,self.distance/3))))
+            extent = self.floor_spacing
             lines=[]
             def segment(a,b,c): lines.extend([list(a)+list(c),list(b)+list(c)])
             for i in range(-10,11):
-                segment((i*extent,-10*extent,0),(i*extent,10*extent,0),(.16,.19,.23))
-                segment((-10*extent,i*extent,0),(10*extent,i*extent,0),(.16,.19,.23))
-            segment((0,0,0),(extent*3,0,0),(.95,.3,.3))
-            segment((0,0,0),(0,extent*3,0),(.3,.85,.45))
+                segment((i*extent,-10*extent,self.floor_height),(i*extent,10*extent,self.floor_height),(.16,.19,.23))
+                segment((-10*extent,i*extent,self.floor_height),(10*extent,i*extent,self.floor_height),(.16,.19,.23))
+            segment((-10*extent,0,self.floor_height),(10*extent,0,self.floor_height),(.95,.3,.3))
+            segment((0,-10*extent,self.floor_height),(0,10*extent,self.floor_height),(.3,.85,.45))
             segment((0,0,0),(0,0,extent*3),(.3,.55,1))
             self.draw_buffer('lines',lines,0x0001)
             root=QMatrix4x4(*transform_matrix(self.scene_transform).reshape(-1).tolist())
             self.program.setUniformValue(self.program.uniformLocation('mvp'),proj*view*root)
+            if self.show_mesh and self.mesh is not None:
+                surface=self.mesh_preview()
+                if self.shading!='Wireframe':
+                    g.glEnable(0x8037);g.glPolygonOffset(1.,1.);self.draw_buffer('surface',surface,0x0004);g.glDisable(0x8037)
+                if self.shading in ('Wireframe','Solid + wire'):
+                    g.glPolygonMode(0x0408,0x1B01);self.draw_buffer('surface',surface,0x0004);g.glPolygonMode(0x0408,0x1B02)
             lines=[]
             if self.pose is not None:
                 s=self.camera_scale
@@ -299,12 +313,15 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
             self.draw_buffer('camera',lines,0x0001)
             triangles=[]
             for index,item in enumerate(self.objects):
-                for triangle in object_triangles(item):
-                    n=np.cross(triangle[1]-triangle[0],triangle[2]-triangle[0]);n/=max(np.linalg.norm(n),1e-9)
-                    shade=.55+.45*abs(float(n@np.array([.25,-.35,.9])))
-                    color=np.minimum(1,np.array(item['color'])*shade+(0.12 if index==self.selected else 0))
-                    triangles.extend([list(v)+color.tolist() for v in triangle])
-            if triangles:self.draw_buffer('objects',triangles,0x0004)
+                data=triangle_buffer(primitive_mesh(item),self.shading,self.smooth_mesh)
+                if index==self.selected:data[:,3:]=np.minimum(1,data[:,3:]+.12)
+                triangles.append(data)
+            if triangles:
+                data=np.concatenate(triangles)
+                if self.shading!='Wireframe':
+                    g.glEnable(0x8037);g.glPolygonOffset(1.,1.);self.draw_buffer('objects',data,0x0004);g.glDisable(0x8037)
+                if self.shading in ('Wireframe','Solid + wire'):
+                    g.glPolygonMode(0x0408,0x1B01);self.draw_buffer('objects',data,0x0004);g.glPolygonMode(0x0408,0x1B02)
             if self.show_path and len(self.path): self.draw_buffer('path',self.path,0x0003,self.dirty)
             if self.show_points and len(self.points): self.draw_buffer('points',self.points,0x0000,self.dirty)
             # Upload hidden layers too on first use so toggles never reference an empty buffer.

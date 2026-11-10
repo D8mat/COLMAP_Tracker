@@ -1,3 +1,4 @@
 # Tested dependency versions. Use Python 3.10 or 3.11.
 PySide6==6.8.3
 numpy==1.23.5
+scipy==1.14.1

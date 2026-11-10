@@ -15,6 +15,7 @@ def check():
         QTimer.singleShot(200,check);return
     try:
         v=w.viewport;w.slider.setValue(600)
+        w.mesh_toggle.setChecked(False);w.cloud_toggle.setChecked(False)
         # Actually click gizmo hit zones, including exact top and bottom views.
         for axis in 'XYZ':
             for sign in (-1,1):

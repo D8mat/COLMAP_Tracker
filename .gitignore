@@ -3,6 +3,7 @@
 /projects/
 /validation/
 /scene_layouts/
+/camera_corrections*.json
 /.venv/
 /.setup/
 /release_check/
@@ -22,6 +23,8 @@
 *.db
 *.db-*
 *.bin
+*.ply
+*.npz
 *.log
 /export_request*.json
 __pycache__/

@@ -92,3 +92,41 @@ Escape during a drag restores the transform and preserves selection.
 Clicking empty space selects Whole scene. Dragging empty space orbits without
 moving objects; right/middle drag pans. The corner gizmo still changes views.
 Image overlays and Blender export use the same edited transforms.
+
+CAMERA KEYFRAME GRAPH
+Below the timeline, enable Keyframe graph. Choose Position XYZ, Translation
+jump (units/frame), or Rotation jump (degrees/frame). Dashed = original solve;
+solid = current result; amber marks = corrected frames. Click a frame to select
+it. Around frame +/-50 zooms the time range. Gaps mean unsolved cameras.
+Edit X/Y/Z and RX/RY/RZ, then Apply pose. Camera values use the Z-up reconstruction
+coordinates before the Whole scene transform. Interpolate neighbours replaces
+one frame from the previous/next solved cameras; inspect both neighbours first.
+Reset frame restores the original; Undo reverses edits. The corrected camera
+and trajectory are used in the preview and Export .blend.
+Save corrections / Load corrections use a separate JSON file tied to this exact
+model. Source COLMAP files remain untouched. Save corrections separately from
+the scene layout. An unsaved-changes prompt protects edits on close/model reload.
+
+FLOOR GRID
+Floor grid displays the world XY plane in Solved frames and matching source
+video. Step changes spacing; Z changes floor height in both video and 3D views.
+Use Whole scene transforms to align the solve to the grid. This guide does not
+detect the physical floor, has no real-scene occlusion and is not exported.
+
+POINT CLOUD / SURFACE MESH
+In the video toolbar, Points, Mesh and Objects toggle geometry independently.
+The slider controls geometry opacity. Shading opens Solid, Vertex color,
+Wireframe, Solid + wire, Normals, and Smooth normals (off = flat shading).
+These modes affect surfaces and primitives in video and 3D. Video point colors
+can be RGB, Solid or Depth; size is adjustable. Vertex color is not a texture.
+
+Build surface mesh runs COLMAP Poisson meshing on filtered sparse points.
+Mesh detail sets resolution; Max input points sets sampling; Density trim
+removes weakly supported regions. Cancel mesh stops the worker and its child.
+This is an approximate surface, not a dense stereo reconstruction: missing
+regions may become holes or inferred geometry. Source COLMAP files stay intact.
+Completed surfaces are saved under projects/meshes and reload with the model.
+Load saved mesh accepts matching .npz files. Export mesh .ply bakes the scene
+transform into Z-up coordinates; Export .blend also includes the surface mesh.
+The surface moves with Whole scene. Geometry layers occlude one another, but
+filmed objects do not independently occlude the overlay.

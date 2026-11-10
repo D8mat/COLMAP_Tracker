@@ -26,6 +26,8 @@ from PySide6.QtWidgets import QStackedWidget
 from desktop_viewport import Viewport
 from image_overlay import OverlayImage
 from scene_editor import SceneEditor
+from camera_editor import CameraEditor
+from mesh_panel import MeshPanel
 
 SAMPLE=Path(CONFIG['sample_project']) if CONFIG.get('sample_project') else ROOT/'sample_project'
 
@@ -81,16 +83,26 @@ class Window(QMainWindow):
         self.button('Open result folder',self.open_folder,form)
         form.addStretch()
         self.stats=QLabel('No reconstruction loaded'); self.stats.setWordWrap(True); self.stats.setObjectName('stats'); form.addWidget(self.stats)
-        scroll=QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(panel); split.addWidget(scroll)
+        scroll=QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(panel);scroll.setMinimumWidth(280); split.addWidget(scroll)
         work=QWidget(); work_layout=QVBoxLayout(work); work_layout.setContentsMargins(0,0,0,0); split.addWidget(work)
         views=QSplitter(); work_layout.addWidget(views,1)
         image_panel=QWidget(); image_layout=QVBoxLayout(image_panel); image_layout.setContentsMargins(0,0,0,0)
         self.image_title=QLabel('IMAGE / SOURCE'); image_layout.addWidget(self.image_title)
         overlay_row=QHBoxLayout();self.overlay_toggle=QCheckBox('Object overlay');self.overlay_toggle.setChecked(True);overlay_row.addWidget(self.overlay_toggle)
-        self.overlay_alpha=QSlider(Qt.Horizontal);self.overlay_alpha.setRange(10,100);self.overlay_alpha.setValue(65);self.overlay_alpha.setToolTip('Object overlay opacity');overlay_row.addWidget(self.overlay_alpha);image_layout.addLayout(overlay_row)
+        self.overlay_toggle.setText('Objects')
+        self.cloud_toggle=QCheckBox('Points');overlay_row.addWidget(self.cloud_toggle)
+        self.mesh_toggle=QCheckBox('Mesh');overlay_row.addWidget(self.mesh_toggle)
+        self.button('Shading…',self.show_shading,overlay_row)
+        self.overlay_alpha=QSlider(Qt.Horizontal);self.overlay_alpha.setRange(0,100);self.overlay_alpha.setValue(65);self.overlay_alpha.setToolTip('Geometry overlay opacity');overlay_row.addWidget(self.overlay_alpha);image_layout.addLayout(overlay_row)
+        floor_row=QHBoxLayout();self.floor_toggle=QCheckBox('Floor grid');self.floor_toggle.setChecked(True);floor_row.addWidget(self.floor_toggle)
+        self.floor_spacing=QDoubleSpinBox();self.floor_spacing.setRange(.001,100000);self.floor_spacing.setDecimals(3);self.floor_spacing.setValue(1);floor_row.addWidget(QLabel('Step'));floor_row.addWidget(self.floor_spacing)
+        self.floor_height=QDoubleSpinBox();self.floor_height.setRange(-1e6,1e6);self.floor_height.setDecimals(3);floor_row.addWidget(QLabel('Z'));floor_row.addWidget(self.floor_height)
+        self.floor_toggle.setToolTip('World XY plane. Align the reconstruction using Scene & objects. The grid does not estimate the real floor.');image_layout.addLayout(floor_row)
         self.image_stack=QStackedWidget(); self.image=OverlayImage('Load a video or prepared scene',self.viewport); self.image.setAlignment(Qt.AlignCenter); self.image.setMinimumSize(240,260); self.image.setStyleSheet('background:#10141b;')
         self.image_stack.addWidget(self.image); self.video_widget=OverlayImage('',self.viewport);self.video_widget.setAlignment(Qt.AlignCenter);self.image_stack.addWidget(self.video_widget); image_layout.addWidget(self.image_stack,1)
         self.overlay_toggle.toggled.connect(self.refresh_overlay);self.overlay_alpha.valueChanged.connect(self.refresh_overlay);self.viewport.edited.connect(self.refresh_overlay)
+        self.floor_toggle.toggled.connect(self.refresh_overlay);self.floor_spacing.valueChanged.connect(self.refresh_overlay);self.floor_height.valueChanged.connect(self.refresh_overlay);self.refresh_overlay()
+        self.cloud_toggle.toggled.connect(self.refresh_overlay);self.mesh_toggle.toggled.connect(self.refresh_overlay)
         views.addWidget(image_panel)
         scene_panel=QWidget(); scene_layout=QVBoxLayout(scene_panel); scene_layout.setContentsMargins(0,0,0,0)
         options=QHBoxLayout(); self.button('Fit scene',lambda:self.viewport.fit(),options)
@@ -107,7 +119,12 @@ class Window(QMainWindow):
         self.time_label=QLabel('—'); self.time_label.setMinimumWidth(160); timeline.addWidget(self.time_label); work_layout.addLayout(timeline)
         mode=QHBoxLayout(); self.button('Source video',self.preview_source,mode); self.button('Solved frames',self.preview_solved,mode)
         self.import_rate=QDoubleSpinBox(); self.import_rate.setDecimals(5); self.import_rate.setRange(.1,240); self.import_rate.setValue(30000/1001); mode.addWidget(QLabel('Import FPS')); mode.addWidget(self.import_rate); mode.addStretch(); work_layout.addLayout(mode)
-        self.console=QPlainTextEdit(); self.console.setReadOnly(True); self.console.setMaximumBlockCount(500); self.console.setMaximumHeight(120); work_layout.addWidget(self.console)
+        self.graph_toggle=QCheckBox('Keyframe graph');self.graph_toggle.setChecked(True);mode.addWidget(self.graph_toggle)
+        self.camera_editor=CameraEditor();work_layout.addWidget(self.camera_editor)
+        self.graph_toggle.toggled.connect(self.camera_editor.setVisible);self.camera_editor.selected.connect(self.select_camera_frame);self.camera_editor.changed.connect(self.camera_corrected)
+        self.camera_editor.edit_started.connect(self.pause)
+        self.mesh_panel=MeshPanel(self);self.mesh_dock=QDockWidget('Mesh & shading',self);mesh_scroll=QScrollArea();mesh_scroll.setWidgetResizable(True);mesh_scroll.setWidget(self.mesh_panel);self.mesh_dock.setWidget(mesh_scroll);self.addDockWidget(Qt.RightDockWidgetArea,self.mesh_dock);self.mesh_dock.hide()
+        self.console=QPlainTextEdit(); self.console.setReadOnly(True); self.console.setMaximumBlockCount(500); self.console.setMaximumHeight(65); work_layout.addWidget(self.console)
         self.player=QMediaPlayer(self); self.audio=QAudioOutput(self); self.audio.setVolume(0); self.player.setAudioOutput(self.audio)
         self.video_sink=QVideoSink(self);self.player.setVideoSink(self.video_sink);self.video_sink.videoFrameChanged.connect(self.source_frame)
         self.player.durationChanged.connect(self.duration_changed); self.player.positionChanged.connect(self.position_changed)
@@ -129,16 +146,30 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
 
     def toggle_points(self,value): self.viewport.show_points=value; self.viewport.update()
     def show_editor(self):self.editor_dock.show();self.editor_dock.raise_()
+    def show_shading(self):self.mesh_dock.show();self.mesh_dock.raise_();self.resizeDocks([self.mesh_dock],[320],Qt.Horizontal)
     def refresh_overlay(self,*args):
+        self.viewport.floor_spacing=self.floor_spacing.value();self.viewport.floor_height=self.floor_height.value();self.viewport.update()
         for widget in (self.image,self.video_widget):
-            widget.enabled_overlay=self.overlay_toggle.isChecked();widget.opacity=self.overlay_alpha.value()/100;widget.update()
+            widget.enabled_overlay=self.overlay_toggle.isChecked();widget.opacity=self.overlay_alpha.value()/100;widget.enabled_grid=self.floor_toggle.isChecked();widget.enabled_points=self.cloud_toggle.isChecked();widget.enabled_mesh=self.mesh_toggle.isChecked();widget.update()
+    def select_camera_frame(self,frame):
+        self.pause()
+        if self.source_mode:self.preview_solved()
+        self.slider.setValue(frame);self.seek(frame)
+    def camera_corrected(self):
+        self.pause();self.viewport.update_camera_path(self.poses)
+        if self.source_mode:
+            pose=self.pose_by_frame.get(self.camera_editor.frame);self.viewport.set_pose(pose)
+        else:self.seek(self.frame)
+        self.refresh_overlay()
     def source_frame(self,frame):
+        if not self.source_mode:return
         image=frame.toImage()
         if image.isNull():return
         self.video_widget.setPixmap(QPixmap.fromImage(image.scaled(self.video_widget.size(),Qt.KeepAspectRatio,Qt.SmoothTransformation)))
         if self.video.text()==getattr(self,'model_video',None):
             pose=self.pose_by_frame.get(1+round(frame.startTime()/1e6*self.model_fps))
             self.viewport.set_pose(pose);self.video_widget.camera=self.source_cameras.get(pose['camera']) if pose else None
+            self.camera_editor.set_frame(1+round(frame.startTime()/1e6*self.model_fps))
         else:self.video_widget.camera=None
         self.video_widget.update()
     def toggle_path(self,value): self.viewport.show_path=value; self.viewport.update()
@@ -172,6 +203,8 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
         self.load_model(folder,images,fps)
     def load_model(self,folder,images,fps):
         if self.loader is not None:return
+        if self.mesh_panel.running:self.status.setText('Finish or cancel mesh generation first.');return
+        if not self.camera_editor.confirm_discard():return
         self.pause(); self.pending=(Path(folder),images,fps); self.status.setText('Loading reconstruction…'); self.set_busy(True)
         self.loader=ModelLoader(folder); self.loader.loaded.connect(self.model_loaded); self.loader.failed.connect(self.load_failed)
         self.loader.finished.connect(self.loader_finished); self.loader.start()
@@ -191,7 +224,9 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
                 self.source_cameras=read_raw_cameras(self.model_folder.parent)
             except Exception:self.source_cameras={}
         self.poses=poses; self.pose_by_frame={p['frame']:p for p in poses}
+        self.camera_editor.set_track(poses)
         self.viewport.set_model(points,poses)
+        self.mesh_panel.model_changed()
         self.stats.setText(f"{len(poses):,} solved cameras\n{len(points):,} reconstructed points\n{self.model_fps:.3f} fps  ·  Z up")
         self.source_mode=False; self.player.pause(); self.image_stack.setCurrentWidget(self.image)
         self.slider.setRange(poses[0]['frame'],poses[-1]['frame']); self.slider.setValue(poses[0]['frame']); self.seek(poses[0]['frame'])
@@ -202,6 +237,7 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
         if not Path(self.video.text()).is_file():self.status.setText('Select an existing video first.'); return
         self.pause(); self.source_mode=True; self.image_stack.setCurrentWidget(self.video_widget)
         self.image_title.setText('SOURCE VIDEO'); self.player.setSource(QUrl.fromLocalFile(self.video.text()))
+        if self.video.text()!=getattr(self,'model_video',None):self.camera_editor.set_frame(-1)
         self.player.setPosition(0); self.slider.setRange(0,int(self.player.duration()))
     def preview_solved(self):
         if not self.poses:return
@@ -220,6 +256,7 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
         if self.source_mode:self.player.setPosition(value); return
         if not self.poses:return
         self.frame=value; pose=self.pose_by_frame.get(value); self.viewport.set_pose(pose)
+        self.camera_editor.set_frame(value)
         self.image.camera=self.cameras.get(pose['camera']) if pose else None
         self.time_label.setText(f'Frame {value} / {self.poses[-1]["frame"]}  ·  {(value-1)/self.model_fps:.2f} s')
         self.image_title.setText('SOLVED FRAME' if pose else 'UNREGISTERED FRAME — no solved camera')
@@ -283,7 +320,7 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
         self.start_export(path)
     def start_export(self,path):
         if not path.lower().endswith('.blend'):path+='.blend'
-        request=ROOT/('export_request_'+uuid.uuid4().hex[:10]+'.json'); request.write_text(json.dumps(dict(model=str(self.model_folder),images=str(self.images) if self.images else '',fps=self.model_fps,output=path,layout=self.editor.snapshot())),encoding='utf-8')
+        request=ROOT/('export_request_'+uuid.uuid4().hex[:10]+'.json'); request.write_text(json.dumps(dict(model=str(self.model_folder),images=str(self.images) if self.images else '',fps=self.model_fps,output=path,layout=self.editor.snapshot(),camera_corrections=self.camera_editor.track.document() if self.camera_editor.track else None,mesh=self.viewport.mesh_path,mesh_smooth=self.viewport.smooth_mesh)),encoding='utf-8')
         try:
             self.export_log=(ROOT/'export.log').open('w',encoding='utf-8')
             self.export_process=subprocess.Popen([CONFIG['blender'],'--background','--factory-startup','--python-exit-code','1','--python',str(ROOT/'export_desktop.py'),'--',str(request)],stdout=self.export_log,stderr=subprocess.STDOUT,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -294,7 +331,9 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
             self.status.setText('Finish loading before closing.'); event.ignore(); return
         if self.export_process:
             self.status.setText('Finish exporting before closing.'); event.ignore(); return
-        self.cancel_job(); self.player.stop(); event.accept()
+        if not self.camera_editor.confirm_discard():event.ignore();return
+        self.mesh_panel.cancel();self.cancel_job();self.player.stop()
+        self.image.renderer.close();self.video_widget.renderer.close();event.accept()
 
 
 def main():
