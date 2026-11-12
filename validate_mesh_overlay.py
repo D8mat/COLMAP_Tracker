@@ -72,7 +72,7 @@ def check():
             before=w.video_widget.grab().toImage();e.track.set_matrix(frame,pose);e.notify()
             assert w.video_widget.grab().toImage()!=before,'Camera correction did not move source overlays'
             e.track.reset(frame);e.notify();assert not e.track.dirty
-            print('PASS original-video mesh/points playback and camera correction alignment',flush=True);w.close();app.exit(0);return
+            print('PASS original-video mesh/points playback and camera correction alignment',flush=True);w.project.mark_saved();w.close();app.exit(0);return
         QTimer.singleShot(100,check)
     except Exception:
         import traceback;traceback.print_exc();app.exit(1)

@@ -101,6 +101,46 @@ With no fixture configured, the application opens with an empty workspace.
 
 ## Camera keyframe graph and floor grid
 
+### Projects and the File menu
+
+The application window is named **ALIEN TRACKER**. The source folder and
+repository remain COLMAP_Tracker.
+
+**File** provides **New project** (`Ctrl+N`), **Open video** (`Ctrl+O`),
+**Open project** (`Ctrl+Shift+O`), **Save project** (`Ctrl+S`), **Save project as**
+(`Ctrl+Shift+S`) and **Exit** (`Alt+F4`). Opening a different video starts a fresh
+project after offering to save existing edits. New project clears the scene,
+camera corrections, model, mesh and video, without deleting files on disk.
+
+A `.tracker.json` project stores tracking settings, source/model/image/mesh
+references, frame rate, camera corrections, scene transforms, cubes/cones,
+floor settings, shading and the current view/timeline. Media and reconstruction
+files are referenced, not embedded. Keep them with the project when moving it;
+relative paths are used where possible. Missing assets or invalid project files
+leave the current project intact. Saves replace the document atomically.
+
+**Generate 3D mesh** in the left panel uses the current reconstruction when it
+belongs to the selected video. Otherwise it runs tracking using the current
+settings, loads the solve and starts surface generation automatically. **Stop**
+cancels tracking and its queued mesh step, or the running mesh job. Surface
+detail and trimming are available in **Shading…**. This uses the sparse surface
+workflow described below, not dense stereo.
+
+### Aligning a floor from points
+
+Click **Align floor… → Pick floor points**, then click at least three points
+spread across the same floor in the 3D viewport. Numbered markers show the
+selection; clicking one again removes it. Drag to orbit, use the axis gizmo for
+side/top views, and press Escape to leave selection mode. The mesh is temporarily
+hidden and points are shown while picking.
+
+**Align floor to Z = 0** fits a plane and rotates/translates the whole scene so
+the selected floor is horizontal. Camera, cloud, mesh and objects move together,
+preserving their image alignment. Scale is preserved. Collinear or markedly
+non-planar selections are rejected. **Undo floor alignment** restores the prior
+scene transform and floor height. Project saving includes the resulting
+alignment. This is manual point-based alignment, not automatic floor detection.
+
 Press **Space** to play/pause either source video or solved-frame playback,
 including while the 3D viewport or timeline has focus. Text/numeric inputs,
 combo boxes and dialogs keep their usual keyboard behavior. Holding Space
@@ -197,7 +237,7 @@ triangle interiors aligned, rather than only distorting projected vertices.
 Run the portable core tests with:
 
 ```powershell
-.venv\Scripts\python.exe -m unittest test_core test_camera_track test_mesh
+.venv\Scripts\python.exe -m unittest test_core test_camera_track test_mesh test_project_floor
 ```
 
 The cancellation test requires configured FFmpeg and COLMAP; otherwise it skips.
@@ -207,6 +247,7 @@ Run real interactive OpenGL picking/gizmo tests with:
 .venv\Scripts\python.exe validate_manipulators.py
 .venv\Scripts\python.exe validate_camera_tools.py
 .venv\Scripts\python.exe validate_projection.py
+.venv\Scripts\python.exe validate_projects_floor.py
 ```
 
 Other `validate_*.py` scripts are developer integration checks using the optional
@@ -214,6 +255,8 @@ local `IMG_2284_nonHDR` fixture. They require an interactive Windows desktop;
 some run reconstruction or Blender and write output into `validation/`.
 `validate_mesh_overlay.py` builds a real surface, exercises video/mesh shading,
 tests process-tree cancellation, and checks PLY and Blender export.
+`validate_video_mesh_flow.py` tests the one-button video-to-mesh sequence on an
+8-second fixture clip, project saving, and cancellation of the queued mesh step.
 
 Verified during development: source-video playback, a 1,349-pose reconstruction,
 a new 8-second COLMAP run with 24 registered cameras, calibrated primitive overlay,

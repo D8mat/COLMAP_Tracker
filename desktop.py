@@ -28,6 +28,8 @@ from image_overlay import OverlayImage
 from scene_editor import SceneEditor
 from camera_editor import CameraEditor
 from mesh_panel import MeshPanel
+from project_manager import ProjectManager
+from floor_alignment import make_panel
 
 SAMPLE=Path(CONFIG['sample_project']) if CONFIG.get('sample_project') else ROOT/'sample_project'
 
@@ -43,15 +45,16 @@ class ModelLoader(QThread):
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('COLMAP Tracker — Video Camera Tracking')
+        self.setWindowTitle('ALIEN TRACKER')
         available=QApplication.primaryScreen().availableGeometry()
         self.resize(min(1500,available.width()-60),min(920,available.height()-60))
         self.job=None; self.loader=None; self.poses=[]; self.pose_by_frame={}; self.model_folder=None
         self.images=None; self.model_fps=30.; self.playing=False; self.frame=1; self.export_process=None
         self.source_mode=False; self.log_offset=0
+        self.mesh_after_tracking=False;self._startup_load=False
         self.viewport=Viewport();self.cameras={};self.source_cameras={}
         root=QWidget(); self.setCentralWidget(root); layout=QVBoxLayout(root)
-        header=QHBoxLayout(); brand=QLabel('COLMAP  /  TRACKER'); brand.setObjectName('brand')
+        header=QHBoxLayout(); brand=QLabel('ALIEN TRACKER'); brand.setObjectName('brand')
         header.addWidget(brand); header.addStretch()
         self.open_button=self.button('Open video',self.open_video,header)
         self.sample_button=self.button('Prepared scene',self.sample,header)
@@ -78,6 +81,8 @@ class Window(QMainWindow):
         self.button('Choose output folder…',self.choose_output,form)
         controls=QHBoxLayout(); self.start=self.button('Start tracking',self.start_job,controls); self.start.setObjectName('primary')
         self.stop=self.button('Stop',self.cancel_job,controls); self.stop.setEnabled(False); form.addLayout(controls)
+        self.generate_mesh_button=self.button('Generate 3D mesh',self.generate_mesh,form)
+        self.generate_mesh_button.setToolTip('Use the current reconstruction, or track the selected video and then generate its surface mesh.')
         self.progress=QProgressBar(); self.progress.setRange(0,6); form.addWidget(self.progress)
         self.status=QLabel('Ready'); self.status.setWordWrap(True); form.addWidget(self.status)
         self.button('Open result folder',self.open_folder,form)
@@ -98,6 +103,7 @@ class Window(QMainWindow):
         self.floor_spacing=QDoubleSpinBox();self.floor_spacing.setRange(.001,100000);self.floor_spacing.setDecimals(3);self.floor_spacing.setValue(1);floor_row.addWidget(QLabel('Step'));floor_row.addWidget(self.floor_spacing)
         self.floor_height=QDoubleSpinBox();self.floor_height.setRange(-1e6,1e6);self.floor_height.setDecimals(3);floor_row.addWidget(QLabel('Z'));floor_row.addWidget(self.floor_height)
         self.floor_toggle.setToolTip('World XY plane. Align the reconstruction using Scene & objects. The grid does not estimate the real floor.');image_layout.addLayout(floor_row)
+        self.button('Align floor…',self.show_floor,floor_row)
         self.image_stack=QStackedWidget(); self.image=OverlayImage('Load a video or prepared scene',self.viewport); self.image.setAlignment(Qt.AlignCenter); self.image.setMinimumSize(240,260); self.image.setStyleSheet('background:#10141b;')
         self.image_stack.addWidget(self.image); self.video_widget=OverlayImage('',self.viewport);self.video_widget.setAlignment(Qt.AlignCenter);self.image_stack.addWidget(self.video_widget); image_layout.addWidget(self.image_stack,1)
         self.overlay_toggle.toggled.connect(self.refresh_overlay);self.overlay_alpha.valueChanged.connect(self.refresh_overlay);self.viewport.edited.connect(self.refresh_overlay)
@@ -125,6 +131,9 @@ class Window(QMainWindow):
         self.graph_toggle.toggled.connect(self.camera_editor.setVisible);self.camera_editor.selected.connect(self.select_camera_frame);self.camera_editor.changed.connect(self.camera_corrected)
         self.camera_editor.edit_started.connect(self.pause)
         self.mesh_panel=MeshPanel(self);self.mesh_dock=QDockWidget('Mesh & shading',self);mesh_scroll=QScrollArea();mesh_scroll.setWidgetResizable(True);mesh_scroll.setWidget(self.mesh_panel);self.mesh_dock.setWidget(mesh_scroll);self.addDockWidget(Qt.RightDockWidgetArea,self.mesh_dock);self.mesh_dock.hide()
+        self.floor_panel=make_panel(self);self.floor_dock=QDockWidget('Floor alignment',self);self.floor_dock.setWidget(self.floor_panel);self.addDockWidget(Qt.RightDockWidgetArea,self.floor_dock);self.floor_dock.hide()
+        self.tabifyDockWidget(self.editor_dock,self.mesh_dock);self.tabifyDockWidget(self.mesh_dock,self.floor_dock)
+        self.editor_dock.hide();self.mesh_dock.hide();self.floor_dock.hide()
         self.console=QPlainTextEdit(); self.console.setReadOnly(True); self.console.setMaximumBlockCount(500); self.console.setMaximumHeight(65); work_layout.addWidget(self.console)
         self.player=QMediaPlayer(self); self.audio=QAudioOutput(self); self.audio.setVolume(0); self.player.setAudioOutput(self.audio)
         self.video_sink=QVideoSink(self);self.player.setVideoSink(self.video_sink);self.video_sink.videoFrameChanged.connect(self.source_frame)
@@ -137,7 +146,8 @@ QLineEdit,QSpinBox,QDoubleSpinBox,QComboBox,QPlainTextEdit{background:#111720;bo
 QPushButton{background:#283346;border:1px solid #40516a;border-radius:5px;padding:8px;} QPushButton:hover{background:#364c67;} QPushButton:disabled{color:#6a7685;}
 QPushButton#primary{background:#246cb0;border-color:#498fce;font-weight:bold;} QGroupBox{border:1px solid #354153;border-radius:6px;margin-top:12px;padding-top:14px;}
 QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#202d3d;padding:12px;border-radius:5px;} QSplitter::handle{background:#293342;}''')
-        QTimer.singleShot(150,self.sample)
+        self.startup_timer=QTimer(self);self.startup_timer.setSingleShot(True);self.startup_timer.timeout.connect(self.startup_sample);self.startup_timer.start(150)
+        self.project=ProjectManager(self)
         QApplication.instance().installEventFilter(self)
 
     def eventFilter(self,receiver,event):
@@ -163,6 +173,16 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
     def toggle_points(self,value): self.viewport.show_points=value; self.viewport.update()
     def show_editor(self):self.editor_dock.show();self.editor_dock.raise_()
     def show_shading(self):self.mesh_dock.show();self.mesh_dock.raise_();self.resizeDocks([self.mesh_dock],[320],Qt.Horizontal)
+    def show_floor(self):self.floor_dock.show();self.floor_dock.raise_();self.resizeDocks([self.floor_dock],[290],Qt.Horizontal)
+    def generate_mesh(self):
+        if self.job or self.loader or self.mesh_panel.running or self.export_process:return
+        if self.model_folder and (not self.video.text() or self.video.text()==getattr(self,'model_video',None)):
+            self.show_shading();self.mesh_panel.start();return
+        if not Path(self.video.text()).is_file():
+            self.open_video()
+            if not Path(self.video.text()).is_file():return
+        if self.start_job():
+            self.mesh_after_tracking=True;self.status.setText('Video → tracking → surface mesh. Stop cancels the sequence.')
     def refresh_overlay(self,*args):
         self.viewport.floor_spacing=self.floor_spacing.value();self.viewport.floor_height=self.floor_height.value();self.viewport.update()
         for widget in (self.image,self.video_widget):
@@ -196,8 +216,10 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
         p=QFileDialog.getExistingDirectory(self,'Project output',self.output.text())
         if p:self.output.setText(p)
     def open_video(self):
-        p,_=QFileDialog.getOpenFileName(self,'Open video','','Video (*.mp4 *.mov *.mkv *.avi *.m4v);;All files (*)')
-        if p:self.video.setText(p); self.preview_source()
+        self.project.open_video()
+    def startup_sample(self):
+        self._startup_load=True;self.sample()
+        if self.loader is None:self._startup_load=False
     def sample(self):
         folder=SAMPLE/'04 SCENES/IMG_2284_nonHDR/sparse'
         if folder.is_dir():
@@ -217,16 +239,19 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
             selected=QFileDialog.getExistingDirectory(self,'Corresponding frame images (Cancel = 3D only)')
             images=Path(selected) if selected else None
         self.load_model(folder,images,fps)
-    def load_model(self,folder,images,fps):
+    def load_model(self,folder,images,fps,confirmed=False):
         if self.loader is not None:return
         if self.mesh_panel.running:self.status.setText('Finish or cancel mesh generation first.');return
-        if not self.camera_editor.confirm_discard():return
+        if not confirmed and not self.camera_editor.confirm_discard():return
         self.pause(); self.pending=(Path(folder),images,fps); self.status.setText('Loading reconstruction…'); self.set_busy(True)
         self.loader=ModelLoader(folder); self.loader.loaded.connect(self.model_loaded); self.loader.failed.connect(self.load_failed)
         self.loader.finished.connect(self.loader_finished); self.loader.start()
     def loader_finished(self):
         self.loader.deleteLater(); self.loader=None; self.set_busy(self.job is not None)
-    def load_failed(self,message): self.status.setText('Import error: '+message)
+        if self._startup_load:self._startup_load=False;self.project.mark_saved()
+        if self.mesh_after_tracking:
+            self.mesh_after_tracking=False;self.show_shading();self.mesh_panel.start()
+    def load_failed(self,message): self.mesh_after_tracking=False;self.status.setText('Import error: '+message)
     def model_loaded(self,data):
         cameras,poses,points=data
         if not poses:self.load_failed('No registered cameras'); return
@@ -240,9 +265,10 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
                 self.source_cameras=read_raw_cameras(self.model_folder.parent)
             except Exception:self.source_cameras={}
         self.poses=poses; self.pose_by_frame={p['frame']:p for p in poses}
+        self.floor_panel.reset()
         self.camera_editor.set_track(poses)
         self.viewport.set_model(points,poses)
-        self.mesh_panel.model_changed()
+        if not self.project.restoring:self.mesh_panel.model_changed()
         self.stats.setText(f"{len(poses):,} solved cameras\n{len(points):,} reconstructed points\n{self.model_fps:.3f} fps  ·  Z up")
         self.source_mode=False; self.player.pause(); self.image_stack.setCurrentWidget(self.image)
         self.slider.setRange(poses[0]['frame'],poses[-1]['frame']); self.slider.setValue(poses[0]['frame']); self.seek(poses[0]['frame'])
@@ -261,6 +287,8 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
         self.slider.setRange(self.poses[0]['frame'],self.poses[-1]['frame']); self.slider.setValue(self.poses[0]['frame']); self.seek(self.slider.value())
     def duration_changed(self,duration):
         if self.source_mode:self.slider.setRange(0,int(duration))
+        if self.source_mode and duration>0 and hasattr(self,'pending_source_position'):
+            position=self.pending_source_position;del self.pending_source_position;self.player.setPosition(min(position,duration))
     def position_changed(self,position):
         if self.source_mode:
             self.slider.blockSignals(True); self.slider.setValue(position); self.slider.blockSignals(False)
@@ -293,15 +321,22 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
             if self.playing:self.pause()
             else:self.playing=True; self.play_origin=time.monotonic(); self.play_frame=self.frame; self.play.setText('Ⅱ Pause')
     def set_busy(self,busy):
-        for widget in (self.start,self.open_button,self.sample_button,self.import_button,self.settings,self.video,self.output):widget.setEnabled(not busy)
-        self.stop.setEnabled(self.job is not None)
+        for widget in (self.start,self.open_button,self.sample_button,self.import_button,self.settings,self.video,self.output,self.generate_mesh_button):widget.setEnabled(not busy)
+        self.stop.setEnabled(self.job is not None or self.mesh_panel.running)
+        if hasattr(self,'project'):
+            for name,action in self.project.actions.items():
+                if name!='Exit':action.setEnabled(not busy)
     def start_job(self):
-        if self.job:return
+        if self.job or self.loader or self.mesh_panel.running:return False
+        if not self.camera_editor.confirm_discard():return False
         settings=dict(CONFIG,video=self.video.text(),output=self.output.text(),fps=self.fps.value(),duration=self.seconds.value(),size=self.size.value(),overlap=self.overlap.value(),gpu=self.gpu.isChecked(),solver=self.solver.currentText(),mask=self.mask.text())
         try:self.job=Job(settings)
-        except Exception as exc:self.status.setText(str(exc)); return
+        except Exception as exc:self.status.setText(str(exc)); return False
         self.log_offset=0; self.console.clear(); self.set_busy(True)
+        return True
     def cancel_job(self):
+        self.mesh_after_tracking=False
+        if self.mesh_panel.running:self.mesh_panel.cancel()
         if self.job:
             self.job.cancel(); self.last_job_folder=self.job.folder; self.status.setText(self.job.message); self.job=None; self.set_busy(False)
     def tick(self):
@@ -320,7 +355,8 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
                 if text:self.console.appendPlainText(text.rstrip())
                 if state!='running':
                     job=self.job; self.last_job_folder=job.folder; self.job=None; self.set_busy(False)
-                    if state=='done':self.load_model(job.folder/'model',job.folder/'undistorted/images',job.settings['fps'])
+                    if state=='done':self.load_model(job.folder/'model',job.folder/'undistorted/images',job.settings['fps'],confirmed=True)
+                    else:self.mesh_after_tracking=False
             except Exception as exc:
                 self.cancel_job(); self.status.setText('Tracking error: '+str(exc))
         if self.export_process and self.export_process.poll() is not None:
@@ -347,7 +383,7 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
             self.status.setText('Finish loading before closing.'); event.ignore(); return
         if self.export_process:
             self.status.setText('Finish exporting before closing.'); event.ignore(); return
-        if not self.camera_editor.confirm_discard():event.ignore();return
+        if not self.project.confirm_discard():event.ignore();return
         self.mesh_panel.cancel();self.cancel_job();self.player.stop()
         self.image.renderer.close();self.video_widget.renderer.close();event.accept()
 

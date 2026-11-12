@@ -117,6 +117,8 @@ Use Whole scene transforms to align the solve to the grid. This guide does not
 detect the physical floor, has no real-scene occlusion and is not exported.
 
 POINT CLOUD / SURFACE MESH
+Generate 3D mesh in the main left panel reuses the loaded solve for this video,
+or runs tracking followed by meshing automatically. Stop cancels both stages.
 In the video toolbar, Points, Mesh and Objects toggle geometry independently.
 The slider controls geometry opacity. Shading opens Solid, Vertex color,
 Wireframe, Solid + wire, Normals, and Smooth normals (off = flat shading).
@@ -133,3 +135,22 @@ Load saved mesh accepts matching .npz files. Export mesh .ply bakes the scene
 transform into Z-up coordinates; Export .blend also includes the surface mesh.
 The surface moves with Whole scene. Geometry layers occlude one another, but
 filmed objects do not independently occlude the overlay.
+
+FILE MENU / PROJECTS
+The application window is named ALIEN TRACKER; folder/repository names are unchanged.
+File: New project (Ctrl+N), Open video (Ctrl+O), Open project (Ctrl+Shift+O),
+Save project (Ctrl+S), Save project as (Ctrl+Shift+S), Exit (Alt+F4).
+Projects (*.tracker.json) store settings, objects, scene/floor transforms,
+camera corrections, mesh references, and view/timeline state. Video, frame
+images and reconstruction files are referenced rather than embedded. Keep these
+assets available when reopening or moving the project. Unsaved edits have a
+Save/Discard/Cancel prompt. New project clears the UI without deleting assets.
+
+FLOOR ALIGNMENT
+Align floor > Pick floor points: click 3 or more spread-out points from one
+floor plane in the 3D viewport. Click a marker again to deselect. Drag to orbit;
+use the axis gizmo or zoom for a better view. Escape leaves picking mode.
+Align floor to Z = 0 fits the selected plane and moves/rotates the whole scene,
+including cameras, points, mesh and objects, preserving their video alignment.
+Undo floor alignment restores the previous transform. Save project preserves
+the resulting alignment. Collinear/non-planar selections are rejected.

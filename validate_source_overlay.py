@@ -20,7 +20,7 @@ def check():
             w.pause();before=w.video_widget.grab().toImage();w.overlay_toggle.setChecked(False);after=w.video_widget.grab().toImage()
             assert before!=after,'Original video overlay missing'
             assert not w.video_widget.pixmap().isNull()
-            print('PASS original video sink decoding and calibrated cone overlay',flush=True);w.close();app.exit(0);return
+            print('PASS original video sink decoding and calibrated cone overlay',flush=True);w.project.mark_saved();w.close();app.exit(0);return
         QTimer.singleShot(100,check)
     except Exception:
         import traceback;traceback.print_exc();app.exit(1)

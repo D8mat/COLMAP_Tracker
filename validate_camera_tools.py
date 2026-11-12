@@ -77,7 +77,7 @@ def check():
         w.viewport.grabFramebuffer();w.grab().save(str(folder/'camera_tools.png'))
         print('PASS graph click, spike interpolation, numeric rotation, undo, save/load, floor visibility/height/root alignment',flush=True)
         if not Path(CONFIG['blender']).is_file():
-            print('SKIP Blender executable not configured',flush=True);w.close();app.exit(0);return
+            print('SKIP Blender executable not configured',flush=True);w.project.mark_saved();w.close();app.exit(0);return
         w.start_export(str(folder/'corrected.blend'));QTimer.singleShot(100,export_done)
     except Exception:
         import traceback;traceback.print_exc();app.exit(1)
@@ -103,7 +103,7 @@ print('PASS exported corrected camera rotation/location, root transform and traj
         result=subprocess.run([CONFIG['blender'],'--background',str(folder/'corrected.blend'),'--python-exit-code','1','--python',str(verifier)],capture_output=True,text=True,timeout=25,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         print(result.stdout,flush=True)
         assert result.returncode==0,result.stderr
-        w.close();app.exit(0)
+        w.project.mark_saved();w.close();app.exit(0)
     except Exception:
         import traceback;traceback.print_exc();app.exit(1)
 

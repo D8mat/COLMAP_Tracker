@@ -31,7 +31,7 @@ def advance():
             assert w.status.text()=='Blender project exported.',w.status.text()
             assert (desktop.ROOT/'validation/desktop_export.blend').stat().st_size>10000
             print('PASS background .blend export',flush=True)
-            w.close();app.exit(0);return
+            w.project.mark_saved();w.close();app.exit(0);return
         QTimer.singleShot(150,advance)
     except Exception:
         import traceback;traceback.print_exc();w.cancel_job();app.exit(1)

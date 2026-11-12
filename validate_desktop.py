@@ -31,7 +31,7 @@ def check():
         window.toggle_points(False); window.toggle_path(False); window.viewport.grabFramebuffer()
         window.toggle_points(True); window.toggle_path(True)
         print('PASS: standalone OpenGL, 1349 poses, Z-up, frame 600 image and camera, point/path toggles.',flush=True)
-        window.close(); app.exit(0)
+        window.project.mark_saved(); window.close(); app.exit(0)
     except Exception:
         import traceback; traceback.print_exc(); app.exit(1)
 QTimer.singleShot(500,check)

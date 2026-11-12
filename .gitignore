@@ -4,6 +4,8 @@
 /validation/
 /scene_layouts/
 /camera_corrections*.json
+*.tracker.json
+*.tracker.json.tmp
 /.venv/
 /.setup/
 /release_check/

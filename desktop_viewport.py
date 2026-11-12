@@ -49,9 +49,15 @@ class ManipulatorOverlay(QWidget):
         v=self.view;painter=QPainter(self);painter.setPen(QColor('#a8bacf'))
         painter.drawText(16,26,'3D SCENE   /   Z UP')
         target='whole scene' if v.selected<0 else v.objects[v.selected]['name']
-        action='Click: select · Drag background: orbit' if v.mode=='Orbit' else v.mode+' '+target+' · Drag an axis handle'
+        action='Click floor points · Drag to orbit' if v.floor_pick else ('Click: select · Drag background: orbit' if v.mode=='Orbit' else v.mode+' '+target+' · Drag an axis handle')
         painter.drawText(16,self.height()-16,action+' · Esc: cancel')
         v.draw_manipulator(painter)
+        root=transform_matrix(v.scene_transform)
+        for number,index in enumerate(v.floor_indices,1):
+            p=v.project(root[:3,:3]@v.points[index,:3]+root[:3,3])
+            if p is not None:
+                painter.setPen(QPen(QColor('#ffe67a'),2));painter.setBrush(Qt.NoBrush)
+                painter.drawEllipse(QPointF(float(p[0]),float(p[1])),7,7);painter.drawText(QPointF(float(p[0])+9,float(p[1])-5),str(number))
         if v.gpu_error:painter.drawText(16,58,'OpenGL error: '+v.gpu_error[:100])
         painter.end()
 
@@ -61,6 +67,8 @@ class Viewport(QOpenGLWidget):
     floor_height=0.
     edited=Signal()
     mode_changed=Signal(str)
+    floor_selection_changed=Signal()
+    floor_pick_cancelled=Signal()
     def __init__(self):
         super().__init__()
         self.setMinimumSize(320,300)
@@ -75,6 +83,7 @@ class Viewport(QOpenGLWidget):
         self.view_projection=None;self.handles=[];self.drag=None;self.hover_axis=None
         self.gizmo_space='Global';self.press_point=None;self.press_hit=None;self.orbit_drag=False
         self.cancelled_drag=False
+        self.floor_pick=False;self.floor_indices=[]
         self.mesh=None;self.mesh_path=None;self.show_mesh=True;self.shading='Vertex color';self.smooth_mesh=True;self._mesh_preview=None;self._mesh_preview_key=None
 
     def set_mesh(self,mesh):
@@ -112,6 +121,25 @@ class Viewport(QOpenGLWidget):
                 if hit is not None and hit<best[0]:best=(hit,index)
         return best[1]
 
+    def pick_floor_point(self,point):
+        if self.view_projection is None or not len(self.points):return
+        root=transform_matrix(self.scene_transform)
+        xyz=self.points[:,:3]@root[:3,:3].T+root[:3,3]
+        clip=np.column_stack((xyz,np.ones(len(xyz))))@self.view_projection.T
+        valid=clip[:,3]>1e-8;ndc=clip[:,:3]/np.maximum(clip[:,3,None],1e-8)
+        valid &= (abs(ndc)<=1).all(axis=1)
+        xy=np.column_stack(((ndc[:,0]+1)*self.width()/2,(1-ndc[:,1])*self.height()/2))
+        distances=np.linalg.norm(xy-[point.x(),point.y()],axis=1)
+        # Clicking a visible marker removes the exact selection, even in dense clouds.
+        selected=[i for i in self.floor_indices if valid[i] and distances[i]<10]
+        if selected:self.floor_indices.remove(min(selected,key=lambda i:distances[i]))
+        else:
+            candidates=np.flatnonzero(valid & (distances<=10))
+            if not len(candidates):return
+            candidates=candidates[distances[candidates]<=distances[candidates].min()+2]
+            index=int(candidates[np.argmin(ndc[candidates,2])]);self.floor_indices.append(index)
+        self.floor_selection_changed.emit();self.update()
+
     def manipulator_frame(self):
         item=self.active_transform();root=transform_matrix(self.scene_transform)
         if self.selected>=0:
@@ -122,6 +150,7 @@ class Viewport(QOpenGLWidget):
 
     def draw_manipulator(self,painter):
         self.handles=[]
+        if self.floor_pick:return
         if self.mode not in ('Move','Rotate') or self.view_projection is None:return
         pivot,basis=self.manipulator_frame();screen=self.project(pivot)
         if screen is None:return
@@ -234,6 +263,7 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
         self.doneCurrent()
 
     def set_model(self, points, poses):
+        self.floor_indices=[];self.floor_selection_changed.emit()
         sample = points[::max(1, math.ceil(len(points)/200000))]
         xyz = np.array([p[0] for p in sample],np.float32).reshape(-1,3) @ WORLD.T
         colors = np.array([p[1] for p in sample],np.float32).reshape(-1,3)
@@ -335,6 +365,7 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
         self.cancelled_drag=False
         self.setFocus();self.last=event.position();self.press_point=event.position();self.orbit_drag=False;self.press_hit=None
         if event.button()==Qt.LeftButton:
+            if self.floor_pick:return
             handle=self.handle_at(event.position())
             if handle:self.begin_drag(handle,event.position());return
             self.press_hit=self.pick_object(event.position())
@@ -358,6 +389,9 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
             self.center += (-right*delta.x()+np.array([0,0,1])*delta.y())*self.distance*.0015
         self.gizmo.update();self.update()
     def mouseReleaseEvent(self,event):
+        if self.floor_pick:
+            if event.button()==Qt.LeftButton and not self.orbit_drag:self.pick_floor_point(event.position())
+            self.press_point=None;self.press_hit=None;return
         if self.cancelled_drag:
             self.cancelled_drag=False;self.press_point=None;self.press_hit=None;return
         if self.drag:
@@ -367,6 +401,7 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
         self.press_point=None;self.press_hit=None
 
     def keyPressEvent(self,event):
+        if self.floor_pick and event.key()==Qt.Key_Escape:self.floor_pick_cancelled.emit();return
         if event.key()==Qt.Key_Escape and self.drag:
             self.drag['item'].update(self.drag['before']);self.drag=None;self.cancelled_drag=True;self.unsetCursor();self.edited.emit();self.update();return
         if not self.drag and event.key() in (Qt.Key_G,Qt.Key_R):

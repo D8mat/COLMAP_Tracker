@@ -47,5 +47,5 @@ def export_done():
     if w.export_process:
         QTimer.singleShot(250,export_done);return
     if w.status.text()!='Blender project exported.':print(w.status.text());app.exit(1);return
-    print('PASS scene-tools Blender export',flush=True);w.close();app.exit(0)
+    print('PASS scene-tools Blender export',flush=True);w.project.mark_saved();w.close();app.exit(0)
 QTimer.singleShot(500,check);sys.exit(app.exec())
