@@ -7,6 +7,7 @@ from PySide6.QtGui import QSurfaceFormat
 from PySide6.QtWidgets import QApplication
 fmt=QSurfaceFormat();fmt.setVersion(3,3);fmt.setProfile(QSurfaceFormat.CoreProfile);QSurfaceFormat.setDefaultFormat(fmt)
 app=QApplication([]);w=desktop.Window();w.show();stage=0;deadline=time.monotonic()+150;phase_time=0
+w.sample()
 def advance():
     global stage,phase_time
     try:

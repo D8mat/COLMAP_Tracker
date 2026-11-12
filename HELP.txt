@@ -2,8 +2,8 @@ COLMAP Tracker — standalone desktop application
 
 START
 Double-click Start_Tracker.cmd. It opens a dedicated PySide6 application with
-an embedded OpenGL viewport, without the Blender interface. The prepared
-SCENES example loads automatically. Its original files remain unchanged.
+an embedded OpenGL viewport, without the Blender interface. Each launch opens
+an empty project. Click Prepared scene to load the configured SCENES example.
 
 WORKSPACE
 Left: tracking settings and output directory.

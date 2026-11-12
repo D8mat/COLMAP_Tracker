@@ -10,6 +10,7 @@ from camera_track import camera_matrix
 
 fmt=QSurfaceFormat();fmt.setVersion(3,3);fmt.setProfile(QSurfaceFormat.CoreProfile);QSurfaceFormat.setDefaultFormat(fmt)
 app=QApplication([]);w=desktop.Window();w.show();deadline=time.perf_counter()+40;stage=0;origin=None;cache_key=None
+w.sample()
 
 def paired():
     np.testing.assert_allclose(w.viewport.pose,camera_matrix(w.pose_by_frame[w.frame]))

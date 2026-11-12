@@ -98,7 +98,8 @@ recover their tracking rate from `settings.json`.
 The optional **Prepared scene** button uses a locally configured `sample_project`
 with `04 SCENES/IMG_2284_nonHDR/sparse`, its sibling `images`, and
 `02 VIDEOS/IMG_2284_nonHDR.mov`. This developer fixture is not distributed.
-With no fixture configured, the application opens with an empty workspace.
+The application always starts with an empty project. The configured fixture is
+loaded only when you click **Prepared scene**.
 
 ## Camera keyframe graph and floor grid
 

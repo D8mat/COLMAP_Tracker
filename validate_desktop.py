@@ -34,5 +34,16 @@ def check():
         window.project.mark_saved(); window.close(); app.exit(0)
     except Exception:
         import traceback; traceback.print_exc(); app.exit(1)
-QTimer.singleShot(500,check)
+def check_startup():
+    try:
+        assert window.loader is None and window.model_folder is None
+        assert not window.poses and not window.video.text() and not len(window.viewport.points)
+        assert not window.viewport.objects and window.viewport.mesh is None
+        assert window.project.path is None and window.project.signature()==window.project.baseline
+        print('PASS: empty startup with a configured sample; sample requires an explicit click.',flush=True)
+        window.sample_button.click()
+        QTimer.singleShot(200,check)
+    except Exception:
+        import traceback;traceback.print_exc();app.exit(1)
+QTimer.singleShot(700,check_startup)
 sys.exit(app.exec())

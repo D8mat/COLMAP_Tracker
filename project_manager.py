@@ -96,7 +96,7 @@ class ProjectManager(QObject):
         self.path=target.resolve();self.mark_saved();self.w.status.setText('Project saved: '+str(self.path));return True
 
     def clear(self,reset_settings=True):
-        w=self.w;w.startup_timer.stop();w._startup_load=False;w.pause();w.player.setSource(QUrl());w.mesh_after_tracking=False
+        w=self.w;w.pause();w.player.setSource(QUrl());w.mesh_after_tracking=False
         w.frame_cache.configure(None,[]);w._requested_frame=None;w._pending_video_frame=None
         if hasattr(w,'pending_source_position'):del w.pending_source_position
         w.source_mode=False;w.model_folder=None;w.images=None;w.model_fps=30.;w.model_video='';w.poses=[];w.pose_by_frame={};w.cameras={};w.source_cameras={};w.last_job_folder=None;w.frame=1
@@ -147,7 +147,7 @@ class ProjectManager(QObject):
 
     def open_path(self,path):
         if not self.available() or not self.confirm_discard():return False
-        w=self.w;w.startup_timer.stop();w.pause();self.opening_path=Path(path).resolve();self.restoring=True
+        w=self.w;w.pause();self.opening_path=Path(path).resolve();self.restoring=True
         w.centralWidget().setEnabled(False);w.editor_dock.setEnabled(False);w.mesh_dock.setEnabled(False);w.floor_dock.setEnabled(False)
         w.loader=ProjectLoader(path);w.loader.loaded.connect(self.apply);w.loader.failed.connect(self.failed);w.loader.finished.connect(self.finished);w.loader.start();w.set_busy(True)
         w.status.setText('Opening project…');return True

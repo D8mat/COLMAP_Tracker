@@ -9,6 +9,7 @@ from PySide6.QtCore import QTimer,Qt
 from PySide6.QtTest import QTest
 fmt=QSurfaceFormat();fmt.setVersion(3,3);fmt.setProfile(QSurfaceFormat.CoreProfile);QSurfaceFormat.setDefaultFormat(fmt)
 app=QApplication([]);w=desktop.Window();w.show();deadline=time.monotonic()+90
+w.sample()
 def check():
     if w.loader is not None or not w.poses:
         if time.monotonic()>deadline:app.exit(1);return

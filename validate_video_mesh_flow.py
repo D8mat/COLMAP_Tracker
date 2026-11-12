@@ -6,7 +6,7 @@ from PySide6.QtGui import QSurfaceFormat
 from PySide6.QtCore import Qt,QTimer
 from PySide6.QtTest import QTest
 fmt=QSurfaceFormat();fmt.setVersion(3,3);fmt.setProfile(QSurfaceFormat.CoreProfile);QSurfaceFormat.setDefaultFormat(fmt)
-app=QApplication([]);w=desktop.Window();w.startup_timer.stop();w.show();w.project.clear()
+app=QApplication([]);w=desktop.Window();w.show();w.project.clear()
 video=desktop.SAMPLE/'02 VIDEOS/IMG_2284_nonHDR.mov'
 w.video.setText(str(video));w.fps.setValue(3);w.seconds.setValue(8);w.size.setValue(1600);w.overlap.setValue(8)
 w.output.setText(str(desktop.ROOT/'validation'));w.graph_toggle.setChecked(False)

@@ -56,7 +56,7 @@ class Window(QMainWindow):
         self._pending_video_frame=None;self._source_scheduled=False;self._requested_frame=None
         self.frame_cache=FrameCache(self);self.frame_cache.ready.connect(self.solved_frame_ready)
         self.preview_timer=QTimer(self);self.preview_timer.setSingleShot(True);self.preview_timer.setTimerType(Qt.PreciseTimer);self.preview_timer.timeout.connect(self.advance_solved)
-        self.mesh_after_tracking=False;self._startup_load=False
+        self.mesh_after_tracking=False
         self.viewport=Viewport();self.cameras={};self.source_cameras={}
         root=QWidget(); self.setCentralWidget(root); layout=QVBoxLayout(root)
         header=QHBoxLayout(); brand=QLabel('ALIEN TRACKER'); brand.setObjectName('brand')
@@ -151,7 +151,6 @@ QLineEdit,QSpinBox,QDoubleSpinBox,QComboBox,QPlainTextEdit{background:#111720;bo
 QPushButton{background:#283346;border:1px solid #40516a;border-radius:5px;padding:8px;} QPushButton:hover{background:#364c67;} QPushButton:disabled{color:#6a7685;}
 QPushButton#primary{background:#246cb0;border-color:#498fce;font-weight:bold;} QGroupBox{border:1px solid #354153;border-radius:6px;margin-top:12px;padding-top:14px;}
 QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#202d3d;padding:12px;border-radius:5px;} QSplitter::handle{background:#293342;}''')
-        self.startup_timer=QTimer(self);self.startup_timer.setSingleShot(True);self.startup_timer.timeout.connect(self.startup_sample);self.startup_timer.start(150)
         self.project=ProjectManager(self)
         QApplication.instance().installEventFilter(self)
 
@@ -229,9 +228,6 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
         if p:self.output.setText(p)
     def open_video(self):
         self.project.open_video()
-    def startup_sample(self):
-        self._startup_load=True;self.sample()
-        if self.loader is None:self._startup_load=False
     def sample(self):
         folder=SAMPLE/'04 SCENES/IMG_2284_nonHDR/sparse'
         if folder.is_dir():
@@ -260,7 +256,6 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
         self.loader.finished.connect(self.loader_finished); self.loader.start()
     def loader_finished(self):
         self.loader.deleteLater(); self.loader=None; self.set_busy(self.job is not None)
-        if self._startup_load:self._startup_load=False;self.project.mark_saved()
         if self.mesh_after_tracking:
             self.mesh_after_tracking=False;self.show_shading();self.mesh_panel.start()
     def load_failed(self,message): self.mesh_after_tracking=False;self.status.setText('Import error: '+message)

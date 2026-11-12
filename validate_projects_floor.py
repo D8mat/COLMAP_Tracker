@@ -17,7 +17,7 @@ fmt=QSurfaceFormat();fmt.setVersion(3,3);fmt.setProfile(QSurfaceFormat.CoreProfi
 app=QApplication([])
 class TestWindow(desktop.Window):
     def sample(self):pass
-w=TestWindow();w.startup_timer.stop();w.show();deadline=time.monotonic()+30
+w=TestWindow();w.show();deadline=time.monotonic()+30
 folder=desktop.ROOT/'validation/project_floor';folder.mkdir(parents=True,exist_ok=True)
 points=np.array([[-2,-2,-1],[2,-2,-.2],[2,2,.6],[-2,2,-.2]],float)
 (folder/'cameras.txt').write_text('1 PINHOLE 640 480 500 500 320 240\n')

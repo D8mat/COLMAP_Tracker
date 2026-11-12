@@ -9,6 +9,7 @@ from PySide6.QtTest import QTest
 from mesh_data import read_ply
 fmt=QSurfaceFormat();fmt.setVersion(3,3);fmt.setProfile(QSurfaceFormat.CoreProfile);QSurfaceFormat.setDefaultFormat(fmt)
 app=QApplication([]);w=desktop.Window();w.show();deadline=time.monotonic()+90;stage=0
+w.sample()
 
 def check():
     global stage

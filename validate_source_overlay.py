@@ -7,6 +7,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QSurfaceFormat
 f=QSurfaceFormat();f.setVersion(3,3);f.setProfile(QSurfaceFormat.CoreProfile);QSurfaceFormat.setDefaultFormat(f)
 app=QApplication([]);w=desktop.Window();w.show();stage=0;deadline=time.monotonic()+45
+w.sample()
 def check():
     global stage
     try:
