@@ -7,12 +7,13 @@ from PySide6.QtGui import QSurfaceFormat,QImage
 from overlay_renderer import CalibratedRenderer
 from mesh_data import validate_mesh
 from scene_geometry import project_camera
+from lens_warp import warp_rgba
 
 fmt=QSurfaceFormat();fmt.setVersion(3,3);fmt.setProfile(QSurfaceFormat.CoreProfile);QSurfaceFormat.setDefaultFormat(fmt)
 app=QApplication([]);v=desktop.Viewport();v.pose=np.eye(4);r=CalibratedRenderer()
 
-def pixels(image):
-    image=image.convertToFormat(QImage.Format_RGBA8888)
+def pixels(image,premultiplied=False):
+    image=image.convertToFormat(QImage.Format_RGBA8888_Premultiplied if premultiplied else QImage.Format_RGBA8888)
     return np.frombuffer(image.bits(),np.uint8).reshape(image.height(),image.bytesPerLine()//4,4)[:,:image.width()].copy()
 
 try:
@@ -33,10 +34,17 @@ try:
     assert data[100,100,1]>150 and data[100,100,2]<5,'Point behind mesh leaked through'
     for camera in [('SIMPLE_RADIAL',200,200,[100,100,100,.3]),('OPENCV',200,200,[100,110,100,100,.1,.02,.004,-.003])]:
         v.points=np.array([[2,1,-5,1,0,0]],np.float32)
-        data=pixels(r.render(v,camera,QSize(200,200),points=True,objects=False,point_size=7.))
+        rendered=r.render(v,camera,QSize(200,200),points=True,objects=False,point_size=7.)
+        data=pixels(rendered)
         uv=project_camera(np.array([[2,-1,5]]),camera)[0]
         x,y=np.floor(uv).astype(int)
         assert data[y,x,0]>150 and data[y,x,3]>150,(camera,uv,data[y,x])
+        r.context.makeCurrent(r.surface)
+        reference=warp_rgba(pixels(r.framebuffer.toImage()),r.mapping)
+        r.context.doneCurrent()
+        # Compare premultiplied pixels, as used by the old CPU warp for compositing.
+        # GPU bilinear sampling may round by a couple of levels at transparent edges.
+        assert np.max(abs(pixels(rendered,True).astype(int)-reference.astype(int)))<=3,'GPU lens warp differs from calibrated CPU reference'
     # A triangle crossing the camera plane must be clipped in homogeneous space.
     v.set_mesh(validate_mesh(np.array([[-.5,-.5,-2],[.5,-.5,-2],[0,.5,1]]),np.array([[0,1,2]]),np.array([[0,1,0]]*3)))
     data=pixels(r.render(v,('PINHOLE',200,200,[100,100,100,100]),QSize(200,200),mesh=True,objects=False))

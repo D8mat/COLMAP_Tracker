@@ -1,12 +1,12 @@
 """Depth-tested offscreen OpenGL geometry overlay using the solved lens model."""
 import numpy as np
 from PySide6.QtCore import QSize
-from PySide6.QtGui import QOpenGLContext, QOffscreenSurface, QSurfaceFormat, QMatrix4x4, QImage
+from PySide6.QtGui import QOpenGLContext, QOffscreenSurface, QSurfaceFormat, QMatrix4x4
 from PySide6.QtOpenGL import (QOpenGLFunctions_3_3_Core, QOpenGLShader, QOpenGLShaderProgram,
-    QOpenGLBuffer, QOpenGLVertexArrayObject, QOpenGLFramebufferObject, QOpenGLFramebufferObjectFormat)
+    QOpenGLBuffer, QOpenGLVertexArrayObject, QOpenGLFramebufferObject, QOpenGLFramebufferObjectFormat,QOpenGLTexture)
 from scene_geometry import mesh_geometry, transform_matrix
 from mesh_data import triangle_buffer
-from lens_warp import distortion_map,warp_rgba,lens_parameters
+from lens_warp import distortion_map,lens_parameters
 
 
 def primitive_mesh(item):
@@ -26,6 +26,7 @@ class CalibratedRenderer:
         self.cached_image = None
         self.mapping_key = None
         self.mapping = None
+        self.warp_buffer=None;self.map_texture=None;self.gpu_mapping_key=None
 
     def initialize(self):
         fmt = QSurfaceFormat(); fmt.setVersion(3, 3); fmt.setProfile(QSurfaceFormat.CoreProfile); fmt.setDepthBufferSize(24)
@@ -65,6 +66,48 @@ void main(){
         if not self.program.addShaderFromSourceCode(QOpenGLShader.Vertex, vertex) or not self.program.addShaderFromSourceCode(QOpenGLShader.Fragment, fragment) or not self.program.link():
             raise RuntimeError(self.program.log())
         self.vao = QOpenGLVertexArrayObject(); self.vao.create()
+        self.warp_program=QOpenGLShaderProgram()
+        warp_vertex='''#version 330 core
+out vec2 uv;
+void main(){vec2 p[3]=vec2[3](vec2(-1,-1),vec2(3,-1),vec2(-1,3));
+gl_Position=vec4(p[gl_VertexID],0,1);uv=p[gl_VertexID]*.5+.5;}'''
+        warp_fragment='''#version 330 core
+in vec2 uv;uniform sampler2D scene;uniform sampler2D mapping;out vec4 frag;
+void main(){vec2 sampleUV=texture(mapping,uv).xy;
+frag=sampleUV.x<0?vec4(0):texture(scene,sampleUV);}'''
+        if not self.warp_program.addShaderFromSourceCode(QOpenGLShader.Vertex,warp_vertex) or not self.warp_program.addShaderFromSourceCode(QOpenGLShader.Fragment,warp_fragment) or not self.warp_program.link():
+            raise RuntimeError(self.warp_program.log())
+
+    def warp_image(self,size):
+        mapping=self.mapping;gl=self.gl
+        if self.gpu_mapping_key!=self.mapping_key:
+            # Upload inverse lens coordinates only when calibration or output size changes.
+            # Both texture rows and sample V coordinates use OpenGL's bottom-up origin.
+            rw,rh=mapping['size']
+            coordinates=np.stack(((mapping['x']+mapping['wx']+.5)/rw,1-(mapping['y']+mapping['wy']+.5)/rh),axis=-1)
+            coordinates[~mapping['valid']]=-1
+            self._uv_data=np.ascontiguousarray(coordinates[::-1],np.float32)
+            if self.map_texture is not None:self.map_texture.destroy()
+            texture=QOpenGLTexture(QOpenGLTexture.Target2D);texture.setFormat(QOpenGLTexture.RG32F)
+            texture.setSize(size.width(),size.height());texture.setMipLevels(1)
+            texture.allocateStorage(QOpenGLTexture.RG,QOpenGLTexture.Float32)
+            texture.setData(QOpenGLTexture.RG,QOpenGLTexture.Float32,self._uv_data.data)
+            texture.setMinMagFilters(QOpenGLTexture.Nearest,QOpenGLTexture.Nearest);texture.setWrapMode(QOpenGLTexture.ClampToEdge)
+            self.map_texture=texture;self.gpu_mapping_key=self.mapping_key
+        if self.warp_buffer is None or self.warp_buffer.size()!=size:
+            self.warp_buffer=QOpenGLFramebufferObject(size)
+        if not self.warp_buffer.isValid():raise RuntimeError('Lens correction framebuffer allocation failed.')
+        self.warp_buffer.bind();gl.glViewport(0,0,size.width(),size.height());gl.glDisable(0x0B71)
+        self.warp_program.bind();self.vao.bind()
+        gl.glActiveTexture(0x84C0);gl.glBindTexture(0x0DE1,self.framebuffer.texture())
+        gl.glTexParameteri(0x0DE1,0x2801,0x2601);gl.glTexParameteri(0x0DE1,0x2800,0x2601)
+        gl.glTexParameteri(0x0DE1,0x2802,0x812F);gl.glTexParameteri(0x0DE1,0x2803,0x812F)
+        gl.glActiveTexture(0x84C1);gl.glBindTexture(0x0DE1,self.map_texture.textureId())
+        gl.glUniform1i(self.warp_program.uniformLocation('scene'),0);gl.glUniform1i(self.warp_program.uniformLocation('mapping'),1)
+        gl.glDrawArrays(0x0004,0,3)
+        gl.glActiveTexture(0x84C0);self.vao.release();self.warp_program.release()
+        result=self.warp_buffer.toImage();self.warp_buffer.release()
+        return result
 
     def uniform(self, name, *values):
         location = self.program.uniformLocation(name)
@@ -141,13 +184,10 @@ void main(){
                     self.uniform('depthRange', *(np.percentile(z, [5, 95]) if len(z) else [0, 1]))
                 self.draw('points', view.points, 0x0000)
             self.program.release()
-            result = self.framebuffer.toImage()
+            result = self.framebuffer.toImage() if not mapping else None
             self.framebuffer.release()
             if mapping:
-                rgba=result.convertToFormat(QImage.Format_RGBA8888)
-                source=np.frombuffer(rgba.bits(),np.uint8).reshape(rgba.height(),rgba.bytesPerLine()//4,4)[:,:rgba.width()]
-                warped=warp_rgba(source,mapping)
-                result=QImage(warped.data,size.width(),size.height(),int(warped.strides[0]),QImage.Format_RGBA8888_Premultiplied).copy()
+                result=self.warp_image(size)
             self.cache_key, self.cached_image = key, result
             return result
         finally:
@@ -156,9 +196,13 @@ void main(){
     def close(self):
         if self.context and self.context.makeCurrent(self.surface):
             self.framebuffer = None
+            self.warp_buffer=None
+            if self.map_texture is not None:self.map_texture.destroy();self.map_texture=None
+            self.gpu_mapping_key=None
             for buffer, _ in self.buffers.values(): buffer.destroy()
             self.buffers.clear()
             if hasattr(self,'vao'):self.vao.destroy()
             if hasattr(self,'program'):self.program.removeAllShaders()
+            if hasattr(self,'warp_program'):self.warp_program.removeAllShaders()
             self.context.doneCurrent()
         self.context = None

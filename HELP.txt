@@ -30,6 +30,10 @@ Import TXT model loads cameras.txt, images.txt and points3D.txt. Numbered frame
 names are required. Set Import FPS before loading an external reconstruction.
 Our project folders read FPS from settings.json. The prepared scene uses
 30000/1001 fps. Missing images do not prevent 3D preview.
+Playback follows elapsed video time and skips overdue frames to avoid drift.
+Solved images are prefetched in the background; pausing/seeking shows the exact
+selected frame. The camera stays paired with the displayed image. Graph caching
+and GPU lens correction reduce preview work without changing the source media.
 
 EXPORT
 Export .blend runs Blender in the background without opening its interface.

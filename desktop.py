@@ -5,6 +5,7 @@ import json
 import time
 import subprocess
 import uuid
+import math
 from pathlib import Path
 
 # QVideoWidget and QOpenGLWidget share one top-level window and graphics API.
@@ -16,11 +17,11 @@ from pipeline import CONFIG, Job, read_model
 if CONFIG.get('qt_packages'):
     sys.path.insert(0,CONFIG['qt_packages'])
 from PySide6.QtCore import Qt, QTimer, QObject, Signal, QThread, QUrl, QSize, QEvent
-from PySide6.QtGui import QSurfaceFormat, QImageReader, QPixmap
+from PySide6.QtGui import QSurfaceFormat, QPixmap
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QLabel,QPushButton,QLineEdit,QFileDialog,QSplitter,QSpinBox,QDoubleSpinBox,
     QComboBox,QCheckBox,QGroupBox,QFormLayout,QSlider,QProgressBar,QPlainTextEdit,QScrollArea,QMessageBox,QDockWidget,QAbstractSpinBox,QTextEdit)
-from PySide6.QtMultimedia import QMediaPlayer,QAudioOutput,QVideoSink
+from PySide6.QtMultimedia import QMediaPlayer,QAudioOutput,QVideoSink,QVideoFrame
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import QStackedWidget
 from desktop_viewport import Viewport
@@ -30,6 +31,7 @@ from camera_editor import CameraEditor
 from mesh_panel import MeshPanel
 from project_manager import ProjectManager
 from floor_alignment import make_panel
+from preview_cache import FrameCache
 
 SAMPLE=Path(CONFIG['sample_project']) if CONFIG.get('sample_project') else ROOT/'sample_project'
 
@@ -51,6 +53,9 @@ class Window(QMainWindow):
         self.job=None; self.loader=None; self.poses=[]; self.pose_by_frame={}; self.model_folder=None
         self.images=None; self.model_fps=30.; self.playing=False; self.frame=1; self.export_process=None
         self.source_mode=False; self.log_offset=0
+        self._pending_video_frame=None;self._source_scheduled=False;self._requested_frame=None
+        self.frame_cache=FrameCache(self);self.frame_cache.ready.connect(self.solved_frame_ready)
+        self.preview_timer=QTimer(self);self.preview_timer.setSingleShot(True);self.preview_timer.setTimerType(Qt.PreciseTimer);self.preview_timer.timeout.connect(self.advance_solved)
         self.mesh_after_tracking=False;self._startup_load=False
         self.viewport=Viewport();self.cameras={};self.source_cameras={}
         root=QWidget(); self.setCentralWidget(root); layout=QVBoxLayout(root)
@@ -198,15 +203,22 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
         else:self.seek(self.frame)
         self.refresh_overlay()
     def source_frame(self,frame):
-        if not self.source_mode:return
+        if not self.source_mode or not frame.isValid():return
+        self._pending_video_frame=QVideoFrame(frame)
+        if not self._source_scheduled:
+            self._source_scheduled=True;QTimer.singleShot(0,self.present_source_frame)
+    def present_source_frame(self):
+        self._source_scheduled=False;frame=self._pending_video_frame;self._pending_video_frame=None
+        if not self.source_mode or frame is None:return
         image=frame.toImage()
         if image.isNull():return
         self.video_widget.setPixmap(QPixmap.fromImage(image.scaled(self.video_widget.size(),Qt.KeepAspectRatio,Qt.SmoothTransformation)))
         if self.video.text()==getattr(self,'model_video',None):
-            pose=self.pose_by_frame.get(1+round(frame.startTime()/1e6*self.model_fps))
+            timestamp=frame.startTime() if frame.startTime()>=0 else self.player.position()*1000
+            frame_number=1+round(timestamp/1e6*self.model_fps);pose=self.pose_by_frame.get(frame_number)
             self.viewport.set_pose(pose);self.video_widget.camera=self.source_cameras.get(pose['camera']) if pose else None
-            self.camera_editor.set_frame(1+round(frame.startTime()/1e6*self.model_fps))
-        else:self.video_widget.camera=None
+            self.camera_editor.set_frame(frame_number)
+        else:self.video_widget.camera=None;self.viewport.set_pose(None)
         self.video_widget.update()
     def toggle_path(self,value): self.viewport.show_path=value; self.viewport.update()
     def choose_mask(self):
@@ -265,6 +277,7 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
                 self.source_cameras=read_raw_cameras(self.model_folder.parent)
             except Exception:self.source_cameras={}
         self.poses=poses; self.pose_by_frame={p['frame']:p for p in poses}
+        self.frame_cache.configure(self.images,poses);self._requested_frame=None
         self.floor_panel.reset()
         self.camera_editor.set_track(poses)
         self.viewport.set_model(points,poses)
@@ -278,12 +291,14 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
     def preview_source(self):
         if not Path(self.video.text()).is_file():self.status.setText('Select an existing video first.'); return
         self.pause(); self.source_mode=True; self.image_stack.setCurrentWidget(self.video_widget)
+        self._pending_video_frame=None
         self.image_title.setText('SOURCE VIDEO'); self.player.setSource(QUrl.fromLocalFile(self.video.text()))
         if self.video.text()!=getattr(self,'model_video',None):self.camera_editor.set_frame(-1)
         self.player.setPosition(0); self.slider.setRange(0,int(self.player.duration()))
     def preview_solved(self):
         if not self.poses:return
         self.pause(); self.source_mode=False; self.image_stack.setCurrentWidget(self.image)
+        self._pending_video_frame=None
         self.slider.setRange(self.poses[0]['frame'],self.poses[-1]['frame']); self.slider.setValue(self.poses[0]['frame']); self.seek(self.slider.value())
     def duration_changed(self,duration):
         if self.source_mode:self.slider.setRange(0,int(duration))
@@ -293,33 +308,57 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
         if self.source_mode:
             self.slider.blockSignals(True); self.slider.setValue(position); self.slider.blockSignals(False)
             self.time_label.setText(f'{position/1000:.2f} / {self.player.duration()/1000:.2f} s')
-            if self.video.text()==getattr(self,'model_video',None):
-                self.viewport.set_pose(self.pose_by_frame.get(1+round(position*self.model_fps/1000)))
-            else:self.viewport.set_pose(None)
+            # The displayed frame timestamp updates the pose, not a separate media-clock event.
     def seek(self,value):
         if self.source_mode:self.player.setPosition(value); return
         if not self.poses:return
+        if self.playing:
+            self.play_origin=time.perf_counter();self.play_frame=value;self.schedule_solved()
+        self.request_solved(value,immediate=not self.playing)
+    def request_solved(self,value,immediate=False):
+        self._requested_frame=value
+        if value not in self.pose_by_frame:
+            self.present_solved(value,None);return
+        image=self.frame_cache.request(value,self.image.size())
+        if image is None and immediate:image=self.frame_cache.load_now(value)
+        if image is not None:self.present_solved(value,image)
+    def solved_frame_ready(self,generation,frame):
+        if self.playing and not self.source_mode and generation==self.frame_cache.generation and frame==self._requested_frame:
+            image=self.frame_cache.get(frame)
+            if image is not None:self.present_solved(frame,image)
+    def present_solved(self,value,image):
         self.frame=value; pose=self.pose_by_frame.get(value); self.viewport.set_pose(pose)
+        self.slider.blockSignals(True);self.slider.setValue(value);self.slider.blockSignals(False)
         self.camera_editor.set_frame(value)
         self.image.camera=self.cameras.get(pose['camera']) if pose else None
         self.time_label.setText(f'Frame {value} / {self.poses[-1]["frame"]}  ·  {(value-1)/self.model_fps:.2f} s')
         self.image_title.setText('SOLVED FRAME' if pose else 'UNREGISTERED FRAME — no solved camera')
-        path=self.images/pose['name'] if self.images and pose else None
-        if path and path.is_file():
-            reader=QImageReader(str(path)); size=reader.size(); size.scale(max(1,self.image.width()),max(1,self.image.height()),Qt.KeepAspectRatio); reader.setScaledSize(size)
-            image=reader.read()
-            if image.isNull():self.image.setText('Cannot decode frame image')
-            else:self.image.setPixmap(QPixmap.fromImage(image))
+        if image is not None and not image.isNull():self.image.setPixmap(QPixmap.fromImage(image))
         else:self.image.clear(); self.image.setText('No image / unsolved frame')
-        if self.playing:self.play_origin=time.monotonic(); self.play_frame=value
-    def pause(self): self.playing=False; self.player.pause(); self.play.setText('▶ Play')
+    def schedule_solved(self):
+        elapsed=max(0.,time.perf_counter()-self.play_origin)
+        deadline=self.play_origin+(math.floor(elapsed*self.model_fps)+1)/self.model_fps
+        self.preview_timer.start(max(1,math.ceil((deadline-time.perf_counter())*1000)))
+    def advance_solved(self):
+        if not self.playing or self.source_mode or not self.poses:return
+        # Keep real elapsed time even if decoding or painting misses a deadline.
+        target=self.play_frame+int((time.perf_counter()-self.play_origin)*self.model_fps)
+        if target>self.slider.maximum():
+            self.pause();self.seek(self.slider.maximum());return
+        if target!=self.frame:self.request_solved(target)
+        self.schedule_solved()
+    def pause(self):
+        self.playing=False;self.preview_timer.stop();self.player.pause();self.play.setText('▶ Play')
+        if not self.source_mode and self.poses and self._requested_frame is not None and self._requested_frame!=self.frame:
+            self.request_solved(self._requested_frame,immediate=True)
     def toggle_play(self):
         if self.source_mode:
             if self.player.playbackState()==QMediaPlayer.PlayingState:self.pause()
             else:self.player.play(); self.play.setText('Ⅱ Pause')
         elif self.poses:
             if self.playing:self.pause()
-            else:self.playing=True; self.play_origin=time.monotonic(); self.play_frame=self.frame; self.play.setText('Ⅱ Pause')
+            else:
+                self.playing=True;self.play_origin=time.perf_counter();self.play_frame=self.frame;self.play.setText('Ⅱ Pause');self.schedule_solved()
     def set_busy(self,busy):
         for widget in (self.start,self.open_button,self.sample_button,self.import_button,self.settings,self.video,self.output,self.generate_mesh_button):widget.setEnabled(not busy)
         self.stop.setEnabled(self.job is not None or self.mesh_panel.running)
@@ -340,12 +379,6 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
         if self.job:
             self.job.cancel(); self.last_job_folder=self.job.folder; self.status.setText(self.job.message); self.job=None; self.set_busy(False)
     def tick(self):
-        if self.playing and self.poses and not self.source_mode:
-            next_frame=self.play_frame+int((time.monotonic()-self.play_origin)*self.model_fps)
-            if next_frame>self.slider.maximum():self.pause()
-            elif next_frame!=self.frame:
-                origin,base=self.play_origin,self.play_frame
-                self.slider.setValue(next_frame); self.play_origin,self.play_frame=origin,base
         if self.job:
             try:
                 state=self.job.tick(); self.progress.setValue(self.job.index); self.status.setText(self.job.message)
@@ -385,6 +418,7 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
             self.status.setText('Finish exporting before closing.'); event.ignore(); return
         if not self.project.confirm_discard():event.ignore();return
         self.mesh_panel.cancel();self.cancel_job();self.player.stop()
+        self.preview_timer.stop();self.frame_cache.close();self._pending_video_frame=None
         self.image.renderer.close();self.video_widget.renderer.close();event.accept()
 
 

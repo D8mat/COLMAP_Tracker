@@ -1,8 +1,10 @@
 """Calibrated Z-up ground overlay with near-plane and image-rectangle clipping."""
 import numpy as np
+from functools import lru_cache
 from scene_geometry import project_camera
 
 
+@lru_cache(maxsize=8)
 def floor_segments(spacing=1., height=0.):
     coordinates = np.linspace(-10*spacing, 10*spacing, 41)
     segments, axes = [], []

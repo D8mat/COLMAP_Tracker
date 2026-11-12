@@ -97,6 +97,7 @@ class ProjectManager(QObject):
 
     def clear(self,reset_settings=True):
         w=self.w;w.startup_timer.stop();w._startup_load=False;w.pause();w.player.setSource(QUrl());w.mesh_after_tracking=False
+        w.frame_cache.configure(None,[]);w._requested_frame=None;w._pending_video_frame=None
         if hasattr(w,'pending_source_position'):del w.pending_source_position
         w.source_mode=False;w.model_folder=None;w.images=None;w.model_fps=30.;w.model_video='';w.poses=[];w.pose_by_frame={};w.cameras={};w.source_cameras={};w.last_job_folder=None;w.frame=1
         v=w.viewport;w.floor_panel.reset();v.points=np.empty((0,6),np.float32);v.path=np.empty((0,6),np.float32);v.pose=None;v.dirty=True;v.set_mesh(None)

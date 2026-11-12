@@ -7,6 +7,7 @@ Blender runs in the background only when exporting a `.blend` file.
 ## Features
 
 - Video preview, reconstructed image sequence and synchronized camera timeline.
+- Clock-based playback with background frame prefetch and GPU lens correction.
 - Colored sparse point cloud, camera trajectory and Z-up orbit navigation.
 - Clickable ±X/±Y/±Z orientation gizmo with orthographic views.
 - Click-to-select cubes and cones, XYZ move arrows and rotation rings.
@@ -146,6 +147,15 @@ including while the 3D viewport or timeline has focus. Text/numeric inputs,
 combo boxes and dialogs keep their usual keyboard behavior. Holding Space
 does not repeatedly toggle playback.
 
+Playback follows elapsed video time, skipping overdue frames instead of building
+up delay. Solved images decode on a background thread with a bounded 96 MiB cache
+(up to 48 images; one unusually large image may exceed that budget). A paused
+seek loads the exact selected frame, and camera overlays follow the displayed
+image. Source video keeps the newest pending frame. The camera graph reuses its
+curves until edited or resized, and lens distortion is applied on the GPU.
+This keeps the existing preview resolution and original media unchanged; the
+achievable frame rate still depends on the video, overlays and hardware.
+
 Enable **Keyframe graph** below the views to inspect camera motion. Choose
 **Position XYZ**, **Translation jump** (reconstruction units per frame), or
 **Rotation jump** (degrees per frame). Dashed curves show the original solve;
@@ -237,7 +247,7 @@ triangle interiors aligned, rather than only distorting projected vertices.
 Run the portable core tests with:
 
 ```powershell
-.venv\Scripts\python.exe -m unittest test_core test_camera_track test_mesh test_project_floor
+.venv\Scripts\python.exe -m unittest test_core test_camera_track test_mesh test_project_floor test_preview_cache
 ```
 
 The cancellation test requires configured FFmpeg and COLMAP; otherwise it skips.
@@ -257,6 +267,10 @@ some run reconstruction or Blender and write output into `validation/`.
 tests process-tree cancellation, and checks PLY and Blender export.
 `validate_video_mesh_flow.py` tests the one-button video-to-mesh sequence on an
 8-second fixture clip, project saving, and cancellation of the queued mesh step.
+`validate_realtime_preview.py` checks the playback clock, frame/camera pairing,
+rapid seeks, graph invalidation, last-frame pause, source-frame coalescing and
+cache shutdown. `validate_projection.py` also compares GPU lens correction with
+the calibrated CPU reference, including transparent edges.
 
 Verified during development: source-video playback, a 1,349-pose reconstruction,
 a new 8-second COLMAP run with 24 registered cameras, calibrated primitive overlay,
@@ -266,6 +280,7 @@ transforms and cone-tip origins. Fresh-install setup is separate from those test
 ## Source layout
 
 - `desktop.py`: application UI, video and processing controls.
+- `preview_cache.py`: background solved-frame decoding and bounded prefetch cache.
 - `desktop_viewport.py`, `manipulation.py`: OpenGL rendering, picking and gizmos.
 - `scene_editor.py`, `scene_geometry.py`, `image_overlay.py`: primitives and calibration.
 - `camera_track.py`, `camera_editor.py`: camera corrections, graph and interpolation.

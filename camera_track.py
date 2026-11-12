@@ -72,6 +72,7 @@ class CameraTrack:
         self.history = []
         self.saved = {}
         self.cache = {}
+        self.revision = 0
 
     def edits(self):
         return {str(p['frame']): p['matrix'] for p in self.poses if 'matrix' in p}
@@ -94,6 +95,7 @@ class CameraTrack:
             if str(p['frame']) in checked:
                 p['matrix'] = checked[str(p['frame'])]
         self.cache.clear()
+        self.revision += 1
 
     def set_matrix(self, frame, matrix):
         edits = self.edits()

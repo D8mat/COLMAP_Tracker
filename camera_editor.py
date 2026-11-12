@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import numpy as np
 from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QEvent
-from PySide6.QtGui import QPainter, QPen, QColor, QPainterPath
+from PySide6.QtGui import QPainter, QPen, QColor, QPainterPath, QPixmap
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QPushButton, QDoubleSpinBox, QFileDialog, QMessageBox, QSizePolicy)
 from camera_track import CameraTrack, camera_matrix
@@ -20,6 +20,7 @@ class CameraGraph(QWidget):
         self.frame = 1
         self.channel = 1
         self.local = False
+        self.plot_cache=None;self.plot_key=None
         self.setMinimumHeight(125)
         self.setToolTip('Click or drag to select a solved frame. Dashed = original; solid = current. Amber marks = edited frames. Gaps are unsolved frames.')
 
@@ -49,13 +50,20 @@ class CameraGraph(QWidget):
             self.select_at(event.position())
 
     def paintEvent(self, event):
-        p = QPainter(self)
+        key=(id(self.track),self.track.revision if self.track else 0,self.channel,self.bounds() if self.track else None,self.width(),self.height(),self.devicePixelRatioF())
+        if key==self.plot_key:
+            self.paint_cached();return
+        ratio=self.devicePixelRatioF()
+        self.plot_cache=QPixmap(round(self.width()*ratio),round(self.height()*ratio));self.plot_cache.setDevicePixelRatio(ratio)
+        self.plot_key=key
+        p = QPainter(self.plot_cache)
         p.fillRect(self.rect(), QColor('#101720'))
         p.setRenderHint(QPainter.Antialiasing)
         p.setPen(QColor('#b6c4d7'))
         if self.track is None:
             p.drawText(self.rect(), Qt.AlignCenter, 'Load a reconstruction to inspect camera keyframes')
             p.end()
+            self.paint_cached()
             return
         rect = self.plot_rect()
         a, b = self.bounds()
@@ -108,10 +116,15 @@ class CameraGraph(QWidget):
         for frame in self.track.edits():
             x = point(int(frame), lo).x()
             p.drawLine(QPointF(x, rect.top()), QPointF(x, rect.top()+7))
-        p.setPen(QPen(QColor('#ffffff'), 1))
-        x = point(self.frame, lo).x()
-        p.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
         p.restore()
+        p.end()
+        self.paint_cached()
+
+    def paint_cached(self):
+        p=QPainter(self);p.drawPixmap(0,0,self.plot_cache)
+        if self.track is not None:
+            rect=self.plot_rect();a,b=self.bounds();x=rect.left()+(self.frame-a)/(b-a)*rect.width()
+            p.setClipRect(rect);p.setPen(QPen(QColor('#ffffff'),1));p.drawLine(QPointF(x,rect.top()),QPointF(x,rect.bottom()))
         p.end()
 
 
