@@ -28,35 +28,9 @@ def load_config(root=ROOT):
 CONFIG = load_config()
 
 
-def read_model(folder):
-    folder = Path(folder)
-    cameras, poses, points = {}, [], []
-    for line in (folder / 'cameras.txt').read_text().splitlines():
-        if not line.strip() or line.startswith('#'):
-            continue
-        t = line.split()
-        cameras[int(t[0])] = (t[1], int(t[2]), int(t[3]), list(map(float, t[4:])))
-    # Empty observation lines are significant: never filter them out first.
-    lines = iter((folder / 'images.txt').read_text().splitlines())
-    for line in lines:
-        if not line.strip() or line.startswith('#'):
-            continue
-        t = line.split(maxsplit=9)
-        if len(t) != 10:
-            raise ValueError('Malformed COLMAP image pose')
-        name = t[9]
-        match = re.search(r'(\d+)$', Path(name).stem)
-        if not match:
-            raise ValueError('Expected numbered frame image: ' + name)
-        poses.append(dict(frame=int(match[1]), q=list(map(float, t[1:5])),
-                          t=list(map(float, t[5:8])), camera=int(t[8]), name=name))
-        next(lines, None)
-    for line in (folder / 'points3D.txt').read_text().splitlines():
-        if not line.strip() or line.startswith('#'):
-            continue
-        t = line.split()
-        points.append((tuple(map(float, t[1:4])), tuple(int(c) / 255 for c in t[4:7]), float(t[7])))
-    return cameras, sorted(poses, key=lambda p: p['frame']), points
+def read_model(folder,with_tracks=True):
+    from track_data import read_reconstruction
+    return read_reconstruction(folder,with_tracks=with_tracks)
 
 
 class Job:

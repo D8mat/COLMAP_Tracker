@@ -66,6 +66,33 @@ loads the largest disconnected reconstruction, rather than merging components.
 
 ## Viewport and editing
 
+The interface adapts the [Shadow theme by --Shadow--](https://extensions.blender.org/themes/shadow/):
+neutral dark panels, light text, blue selection and gently rounded controls.
+Scene rows and actions have vector icons, including distinct cube, downward cone,
+point cloud, mesh and camera symbols. Show/Lock retain their checkbox controls.
+
+Both preview windows reuse the same prepared primitive geometry. Object or shading
+edits rebuild it; camera movement does not. The 3D viewport also retains unchanged
+object and surface buffers on the GPU. Video resolution and projection stay unchanged.
+On the prepared 2160×3840 / 29.97 fps clip with 16 cubes/cones, a six-second local
+profile measured average 3D draw time of 0.62 ms (previously 2.93 ms) and video-canvas
+paint time of 4.44 ms (previously 6.39 ms). Both runs presented about 30 fps; this
+reduces rendering overhead, not the source frame interval. The roughly 13 ms video
+frame conversion/presentation cost remains and depends on the machine and codec.
+
+**Scene & objects** contains a tree of the scene, reconstruction components
+and cubes/cones. Selection follows clicks in either the tree or 3D view.
+**Show** toggles a primitive in both views; **Lock** prevents picking/editing its
+transform (it still follows Whole scene). Double-click or **Rename** changes its
+name; **Duplicate** creates an unlocked copy. Visibility and locks are saved in
+projects/layouts and carried into Blender export. `F` frames the selection,
+`Ctrl+D` duplicates, `Delete` removes and `F2` renames it.
+
+**Edit → Undo/Redo** (`Ctrl+Z` / `Ctrl+Shift+Z`) shares one history for object
+operations, transforms, floor settings/alignment and camera corrections. One
+gizmo drag is one step; `Esc` cancels it. History resets on project/model replacement
+and is not stored on disk. Text fields keep native text undo.
+
 | Action | Control |
 | --- | --- |
 | Select primitive | Click its surface in the 3D viewport |
@@ -121,8 +148,16 @@ A `.tracker.json` project stores tracking settings, source/model/image/mesh
 references, frame rate, camera corrections, scene transforms, cubes/cones,
 floor settings, shading and the current view/timeline. Media and reconstruction
 files are referenced, not embedded. Keep them with the project when moving it;
-relative paths are used where possible. Missing assets or invalid project files
-leave the current project intact. Saves replace the document atomically.
+relative paths are used where possible. Missing assets can be located again
+before replacing the current project; Save preserves the new paths. Cancelled
+relinking and invalid files leave the current project intact. Saves are atomic.
+
+**File → Recent projects** lists ten recent files. Unsaved work autosaves every
+30 seconds to `projects/.recovery`, separately from the manual save. After an
+interrupted session, startup reports available snapshots under **File → Recover
+autosave** while still opening an empty project. Save the recovered project to
+keep it. Referenced assets must remain available. Active sessions are excluded
+from recovery lists. Autosave waits during loading, solving, meshing or a drag.
 
 **Generate 3D mesh** in the left panel uses the current reconstruction when it
 belongs to the selected video. Otherwise it runs tracking using the current
@@ -142,8 +177,8 @@ hidden and points are shown while picking.
 **Align floor to Z = 0** fits a plane and rotates/translates the whole scene so
 the selected floor is horizontal. Camera, cloud, mesh and objects move together,
 preserving their image alignment. Scale is preserved. Collinear or markedly
-non-planar selections are rejected. **Undo floor alignment** restores the prior
-scene transform and floor height. Project saving includes the resulting
+non-planar selections are rejected. **Edit → Undo** / **Undo last edit** restores
+the latest project edit, including floor alignment. Project saving includes the resulting
 alignment. This is manual point-based alignment, not automatic floor detection.
 
 Press **Space** to play/pause either source video or solved-frame playback,
@@ -152,6 +187,22 @@ combo boxes and dialogs keep their usual keyboard behavior. Holding Space
 does not repeatedly toggle playback.
 At the end, pressing **Space** or **Play** starts again from the beginning in
 both modes. Pausing in the middle and playing again resumes at that position.
+
+**Left/Right** step a frame, **Home/End** jump to clip ends and **Frame** jumps
+to a number. **In/Out** (`I` / `O`) set the playback range; **Clear** resets it.
+**Loop** repeats the range; speed supports 0.25×–2×. Source/solved ranges are
+separate and saved with the project. Source indexing uses `ffprobe.exe` beside
+FFmpeg and actual presentation timestamps, including variable frame spacing.
+Stepping is enabled after indexing. If ffprobe is unavailable, ordinary video
+playback remains available and the toolbar explains the missing indexer.
+
+In the image pane, wheel zooms around the pointer, middle/right drag pans,
+**Fit** resets the view and **100%** shows one image pixel per screen pixel.
+**Loupe** magnifies under the pointer and **Hide overlays** shows the clean image.
+Video, grid and geometry use the same image transform. Full-resolution images
+decode as needed; geometry-overlay raster resolution is capped at 1600 pixels
+on the long edge to bound lens-warp memory. **Help → Keyboard & mouse controls**
+lists the shortcuts.
 
 Playback follows elapsed video time, skipping overdue frames instead of building
 up delay. Solved images decode on a background thread with a bounded 96 MiB cache
@@ -163,22 +214,59 @@ This keeps the existing preview resolution and original media unchanged; the
 achievable frame rate still depends on the video, overlays and hardware.
 
 Enable **Keyframe graph** below the views to inspect camera motion. Choose
-**Position XYZ**, **Translation jump** (reconstruction units per frame), or
-**Rotation jump** (degrees per frame). Dashed curves show the original solve;
+**Position XYZ**, **Translation XYZ** (signed displacement per frame),
+**Rotation jump** (degrees per frame), or **Translation total** (displacement magnitude).
+Translation XYZ shows ΔX in red, ΔY in green and ΔZ in blue, in Z-up reconstruction
+units per frame. Use **XYZ / X only / Y only / Z only** to isolate a component;
+the vertical scale follows the visible axes. Negative values show the opposite
+direction, and a dashed zero line separates the signs. The first camera uses a
+zero baseline; across missing cameras, deltas are divided by the frame gap and
+the plotted line remains broken. Dashed curves show the original solve;
 solid curves show the current result. Amber ticks mark corrected frames.
 Click the graph to select a solved frame, or choose **Around frame ±50** to
 inspect a smaller section. Missing cameras appear as gaps. A large jump may
 also be real camera movement; the graph does not automatically classify errors.
 
 For a selected frame, edit **X/Y/Z** and **RX/RY/RZ**, then click **Apply pose**.
+Enable **Only this frame** to pin manual camera editing to that solved frame.
+The editor shows its frame number. Browsing other frames makes the pose fields,
+axis drags, Apply, Reset and Interpolate read-only. **Go to edit frame** returns
+to the pinned frame; **Use current frame** explicitly chooses a new target.
+Turning the lock off follows the selected frame, still editing only that one
+camera at a time. The lock is a session editing aid and resets on model/project
+replacement. It applies to solved camera frames: at lower tracking FPS, several
+source-video frames may share the same solved pose. Enabling the lock switches
+to the selected Solved frame so its target is unambiguous.
 These are absolute camera coordinates in the Z-up reconstruction, before the
 whole-scene transform. Focusing a numeric field pauses playback.
-**Interpolate neighbours** repairs one frame using the previous and next solved
-cameras, weighted by frame distance, with shortest-arc quaternion interpolation
-for rotation. Check that both neighbours are good first. Endpoints cannot use
-this repair. **Reset frame** restores the solve; **Undo** reverses a correction.
+Alternatively, drag the **X ↔ / Y ↔ / Z ↔ / RX° ↔ / RY° ↔ / RZ° ↔** labels
+horizontally: changes apply live to the image, reprojection overlay and 3D view.
+Hold **Shift** for 10× finer movement; **Drag speed** offers 0.1× / 1× / 10×.
+Position sensitivity adapts to the solved camera-path scale; rotation uses
+0.1° per pixel at 1×. Releasing commits one Undo step; **Esc**, focus loss or
+a frame change cancels the in-progress drag. A simple click makes no correction.
+Playback pauses on press. Save/autosave cannot capture a partially completed drag.
+Typed values still use Apply pose. These controls adjust the selected camera pose;
+they do not move measured 2D markers or run a new solve.
+**Interpolate ±5** preserves the selected camera exactly, including its manual
+correction, and blends five neighbouring frames on each side towards it. The
+range control allows ±5 to ±100 frames. Unchanged cameras just outside the range
+are anchors (normally ±6 for the default range); inspect these first. Position
+is linear and rotation follows the shortest quaternion arc, weighted by frame
+distance. Missing solved frames are skipped. At clip edges the range is shortened
+and endpoints remain anchors; one-sided interpolation is supported. Existing
+corrections inside the neighbour range are replaced. This explicit range action
+also works at the pinned centre with **Only this frame** enabled; pose fields and
+drags still edit only that centre. The entire range is one Undo/Redo step.
+**Reset frame** restores the solve; **Undo** reverses the last project edit.
 Corrections update image overlays, the 3D camera/path and Blender export.
 They change camera poses, not lens calibration, points or the source model files.
+`validate_camera_drag.py` exercises all six drag axes, live preview, grouped
+Undo/Redo, Shift/speed, release-position capture, cancellation and save guards.
+`validate_translation_graph.py` verifies rendered XYZ curves, axis isolation,
+the total-magnitude fallback, frame selection and plot-cache invalidation.
+`validate_interpolation_range.py` checks ±5/±6 ranges, exact centre preservation,
+unchanged exterior cameras, shared Undo/Redo and the frame-lock guard.
 
 Use **Save corrections…** / **Load corrections…** for a separate JSON file.
 The file is tied to the exact reconstruction; another model is rejected.
@@ -285,6 +373,70 @@ transforms and cone-tip origins. Fresh-install setup is separate from those test
 
 ## Source layout
 
+**Track data…** below the reconstruction statistics opens a read-only table of
+registered frames. Double-click a row or choose **Go to selected frame** to inspect
+that solved image. It lists measured 2D features, valid 2D-to-3D associations,
+untriangulated features and invalid references. These counts are not pixel error
+or a quality score. Only registered images are present; missing-camera detection,
+aggregate error graphs and marker editing are subsequent roadmap steps.
+
+Enable **Track error** above the image in **Solved frames** to see measured points
+as circles, projected points as crosses and a line joining each pair. Green means
+error ≤1 px, yellow ≤3 px, and red >3 px, in the imported model's image pixels;
+zoom, pan, preview resolution and whole-scene/floor transforms do not change it.
+**Current camera** includes manual pose corrections; **Original solve** compares
+the same measurements with the original imported camera. Undo updates the overlay.
+**Options…** opens minimum-error and maximum-marker controls in Track data.
+The default displays at most 1,000 markers, prioritising the largest errors, so
+the visible colors are not an unbiased sample of all tracks. Untriangulated or
+invalid links are excluded; points behind the camera/non-finite projections are
+reported as not projectable, never assigned zero error. Unsupported lenses show
+an explicit unavailable message. Supported lenses are SIMPLE_PINHOLE, PINHOLE,
+SIMPLE_RADIAL, RADIAL and OPENCV.
+
+Measured diagnostics use the imported camera and its associated solved image,
+including either original distorted or undistorted models. **Source video** asks
+you to switch to Solved frames: no approximate pairing of measured features with
+intermediate video frames or mixing of raw/undistorted coordinates. Ordinary 3D
+video overlays continue working. Display options persist in projects; older
+projects default to diagnostics off. On the prepared clip, 1,000 markers painted
+at about 17 ms per frame in a four-second run, with about 30 paints/second.
+
+The importer preserves original image/point IDs, zero-based observation indices,
+XY measurements, XYZ positions and both directions of each reconstructed track.
+A reconstructed track is identified by its point ID; an untriangulated observation
+by its image ID and observation index. The full arrays are separate from the sampled
+Z-up viewport and unchanged by scene/camera corrections. XY belongs to the imported
+model's image domain; source-video and undistorted coordinates must not be mixed.
+Table time is `(numbered frame - 1) / tracking FPS`, not a source-video frame index.
+See the [COLMAP format specification](https://colmap.github.io/format.html).
+
+Text files are streamed and the app loads them in its existing background worker.
+The prepared 1,349-image fixture contains 343,352 points and 13,836,119 observations;
+full import took about 16 seconds locally, with about 414 MiB in the principal
+diagnostic arrays (additional Python/display data uses more memory). Export and
+mesh workers use the lightweight geometry-only mode. Projects keep external model
+references; reopening reconstructs the diagnostic data from those model files.
+Malformed records/duplicate IDs are rejected. Inconsistent track references and
+non-finite XY are retained and flagged instead of silently becoming valid tracks.
+
+`test_track_data.py` covers non-contiguous/large IDs, empty observations, invalid
+links, precision, malformed input and geometry-only compatibility.
+`validate_track_data.py` checks the inspector, frame navigation, viewport ID mapping,
+project reopening/reset and the full prepared fixture.
+`test_reprojection.py` checks residuals against independent analytic projection,
+including a deliberately damaged measurement, supported distortion models and
+corrected poses. `validate_reprojection.py` checks pixel placement through zoom/pan,
+toggle/Undo behavior, source/frame guards, settings persistence and real playback.
+
+`validate_p0.py` creates a 29.97 fps fixture to verify stepping, ranges/loop/rate,
+object-list operations, grouped undo, recovery isolation and relinking. It uses
+isolated recovery state under `validation/` and captures the themed interface.
+
+- `transport.py`: indexed source timestamps, stepping, ranges, looping and speed.
+- `edit_history.py`, `project_recovery.py`: shared undo, recovery and recent files.
+- `ui_theme.py`: Qt adaptation of the Shadow palette; `scene_icons.py`: vector inspector icons.
+
 See [ROADMAP.md](ROADMAP.md) for the feature audit, comparison with other tracking
 tools, priorities and acceptance criteria for planned work.
 
@@ -297,6 +449,8 @@ tools, priorities and acceptance criteria for planned work.
 - `mesh_worker.py`, `mesh_data.py`, `mesh_panel.py`: surface generation, persistence and shading controls.
 - `overlay_renderer.py`, `lens_warp.py`: GPU geometry overlays and calibrated raster distortion.
 - `pipeline.py`: subprocess pipeline and COLMAP text-model reader.
+- `track_data.py`, `track_data_panel.py`: full observations, track associations and import inspector.
+- `reprojection.py`, `reprojection_overlay.py`: per-frame pixel residuals and bounded diagnostic marker drawing.
 - `export_desktop.py`, `tracker.py`: background Blender export and the earlier native Blender prototype.
 
 The importer is implemented independently from the

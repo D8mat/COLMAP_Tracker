@@ -61,8 +61,12 @@ def make_panel(window):
             try:scene,rms=align_floor(v.points[v.floor_indices,:3],v.scene_transform)
             except ValueError as exc:QMessageBox.warning(self,'Cannot align floor',str(exc));return
             self.previous=(copy.deepcopy(v.scene_transform),window.floor_height.value())
-            v.scene_transform=scene;window.floor_height.setValue(0);window.floor_toggle.setChecked(True)
-            self.pick.setChecked(False);v.edited.emit();v.fit();self.undo.setEnabled(True)
+            if hasattr(window,'history'):window.history.begin()
+            try:
+                v.scene_transform=scene;window.floor_height.setValue(0);window.floor_toggle.setChecked(True)
+                self.pick.setChecked(False);v.edited.emit();v.fit();self.undo.setEnabled(True)
+            finally:
+                if hasattr(window,'history'):window.history.end()
             self.info.setText(f'Floor aligned · fitting error {rms:.4g} units')
         def restore(self):
             if self.previous is None:return

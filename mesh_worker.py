@@ -28,7 +28,7 @@ def observing_centers(model, poses, points):
 def build(model, output, colmap, depth=8, limit=80000, trim=6.):
     folder = Path(output); folder.mkdir(parents=True, exist_ok=True)
     print('Reading sparse reconstruction…', flush=True)
-    _, poses, source = read_model(model)
+    _, poses, source = read_model(model,with_tracks=False)
     points = np.array([p[0] for p in source]) @ WORLD.T
     colors = np.array([p[1] for p in source])
     hints, reliable = observing_centers(model,poses,points)

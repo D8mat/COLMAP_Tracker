@@ -1,5 +1,5 @@
 """Real Qt tests for project lifecycle, point picking and floor alignment."""
-import sys,time,json,copy
+import sys,time,json,copy,os
 from pathlib import Path
 import desktop
 import numpy as np
@@ -15,6 +15,7 @@ from scene_geometry import transform_matrix
 
 fmt=QSurfaceFormat();fmt.setVersion(3,3);fmt.setProfile(QSurfaceFormat.CoreProfile);QSurfaceFormat.setDefaultFormat(fmt)
 app=QApplication([])
+os.environ['ALIEN_TRACKER_STATE_DIR']=str(desktop.ROOT/'validation/project_floor/recovery')
 class TestWindow(desktop.Window):
     def sample(self):pass
 w=TestWindow();w.show();deadline=time.monotonic()+30

@@ -16,6 +16,7 @@ def validate_layout(data):
             if len(item[key])!=3 or any(not isinstance(v,(int,float)) or abs(v)>1e9 for v in item[key]):raise ValueError('Invalid scene transform.')
         if not .0001<=item['scale']<=1e6:raise ValueError('Invalid scene scale.')
     for item in data['objects']:
+        if any(not isinstance(item.get(key,default),bool) for key,default in [('visible',True),('locked',False)]):raise ValueError('Invalid object visibility/lock.')
         if item['kind'] not in ('Cube','Cone') or not isinstance(item['name'],str) or len(item['color'])!=3 or any(not 0<=v<=1 for v in item['color']):raise ValueError('Invalid scene object.')
 
 
@@ -29,6 +30,18 @@ def validate_document(data):
     for section in ('tracking','view','meshing','orbit'):
         if not isinstance(data[section],dict):raise ValueError('Invalid project settings.')
     if data.get('camera_corrections') and not data['assets']['model']:raise ValueError('Camera corrections require a reconstruction.')
+    if 'diagnostics' in data:
+        d=data['diagnostics']
+        if (not isinstance(d,dict) or type(d.get('enabled')) is not bool or type(d.get('original')) is not bool
+                or type(d.get('minimum')) not in (int,float) or not 0<=d['minimum']<=1000
+                or type(d.get('limit')) is not int or not 10<=d['limit']<=5000):raise ValueError('Invalid track-error display settings.')
+    if 'transport' in data:
+        transport=data['transport']
+        if not isinstance(transport,dict) or not isinstance(transport.get('loop'),bool) or transport.get('rate') not in (.25,.5,1,1.5,2):raise ValueError('Invalid playback controls.')
+        ranges=transport.get('ranges')
+        if not isinstance(ranges,dict):raise ValueError('Invalid playback ranges.')
+        for key,value in ranges.items():
+            if key not in ('source','solved') or not isinstance(value,list) or len(value)!=2 or any(type(v) is not int or v<1 for v in value) or value[1]<value[0]:raise ValueError('Invalid playback range.')
 
 
 def map_paths(data,base,encode):
@@ -51,9 +64,13 @@ def write_project(path,data):
     temporary.write_text(text,encoding='utf-8');temporary.replace(path)
 
 
-def read_project(path):
+def project_document(path):
     path=Path(path).resolve();data=json.loads(path.read_text(encoding='utf-8-sig'));validate_document(data)
-    data=map_paths(data,path.parent,False);assets=data['assets']
+    return map_paths(data,path.parent,False)
+
+
+def read_project(path,data=None):
+    data=project_document(path) if data is None else copy.deepcopy(data);validate_document(data);assets=data['assets']
     for key in ('video','model_video','mesh'):
         if assets[key] and not Path(assets[key]).is_file():raise ValueError(f'Missing {key}: {assets[key]}')
     if assets['images'] and not Path(assets['images']).is_dir():raise ValueError('Missing frame images folder: '+assets['images'])

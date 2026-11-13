@@ -47,7 +47,8 @@ class FrameCache(QObject):
         if not path:return QImage()
         reader=QImageReader(path);target=reader.size()
         if target.isValid():
-            target.scale(QSize(*size),Qt.KeepAspectRatio);reader.setScaledSize(target)
+            if target.width()>size[0] or target.height()>size[1]:target.scale(QSize(*size),Qt.KeepAspectRatio)
+            reader.setScaledSize(target)
         return reader.read()
 
     def store_locked(self,frame,image):

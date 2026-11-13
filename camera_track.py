@@ -119,14 +119,51 @@ class CameraTrack:
         weight = (frame-a['frame'])/(b['frame']-a['frame'])
         self.set_matrix(frame, interpolate_matrix(camera_matrix(a), camera_matrix(b), weight))
 
+    def interpolation_window(self,frame,radius=5):
+        if frame not in self.by_frame:raise ValueError('Choose a solved centre frame.')
+        if type(radius) is not int or radius<1:raise ValueError('Interpolation radius must be a positive frame count.')
+        center=int(np.searchsorted(self.frames,frame))
+        left=max(0,int(np.searchsorted(self.frames,frame-radius,side='left'))-1)
+        right=min(len(self.frames)-1,int(np.searchsorted(self.frames,frame+radius,side='right')))
+        targets=[int(f) for f in self.frames[left+1:center]]+[int(f) for f in self.frames[center+1:right]]
+        return dict(center=center,left=left,right=right,targets=targets)
+
+    def interpolate_neighbours(self,frame,radius=5):
+        """Blend neighbours to the current centre; keep centre and outer anchors exact."""
+        plan=self.interpolation_window(frame,radius)
+        if not plan['targets']:return []
+        center=plan['center'];left=plan['left'];right=plan['right']
+        edits=self.edits();middle=camera_matrix(self.poses[center])
+        # Snapshot both anchors before replacing any pose, avoiding order-dependent results.
+        first=camera_matrix(self.poses[left]);last=camera_matrix(self.poses[right])
+        for start,end,a,b in ((left,center,first,middle),(center,right,middle,last)):
+            for index in range(start+1,end):
+                target=int(self.frames[index]);weight=(target-self.frames[start])/(self.frames[end]-self.frames[start])
+                edits[str(target)]=validate_matrix(interpolate_matrix(a,b,weight))
+        self.replace(edits)
+        return plan['targets']
+
+    def matrices(self):
+        if 'matrices' not in self.cache:
+            matrices=self.original.copy()
+            for index,pose in enumerate(self.poses):
+                if 'matrix' in pose:matrices[index]=pose['matrix']
+            self.cache['matrices']=matrices
+        return self.cache['matrices']
+
     def values(self, channel, original=False):
         key = (channel, original)
         if key in self.cache:
             return self.cache[key]
-        matrices = self.original if original else np.array([camera_matrix(p) for p in self.poses])
+        matrices = self.original if original else self.matrices()
         if channel == 0:
             self.cache[key] = matrices[:, :3, 3]
             return self.cache[key]
+        if channel == 3:
+            values=np.zeros((len(matrices),3))
+            if len(matrices)>1:values[1:]=np.diff(matrices[:,:3,3],axis=0)/np.diff(self.frames)[:,None]
+            self.cache[key]=values
+            return values
         values = np.zeros(len(matrices))
         if len(matrices) > 1:
             gaps = np.diff(self.frames)

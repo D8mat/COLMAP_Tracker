@@ -61,6 +61,12 @@ Optional importer (not installed):
 https://github.com/SBCV/Blender-Addon-Photogrammetry-Importer
 
 SCENE TOOLS
+Scene & objects has an object tree. Show hides a primitive in video and 3D;
+Lock prevents editing/picking it in 3D. Locked objects still follow Whole scene.
+Rename (F2), Duplicate (Ctrl+D), Delete and Frame selected (F) are available.
+Visibility and locks are saved and exported. Edit > Undo/Redo (Ctrl+Z /
+Ctrl+Shift+Z) shares a history for objects, floor and camera corrections.
+One gizmo drag is one step. New/open resets history.
 Click the corner axis gizmo (+/-X, +/-Y, +/-Z) to switch to an orthographic view.
 Dragging in Orbit returns to perspective. Z remains the world up reference.
 Scene & objects opens the transform panel. Choose Whole scene to move/rotate/
@@ -105,13 +111,40 @@ Space toggles playback in Source video and Solved frames. It also works when
 the 3D viewport or timeline has focus. Text/numeric inputs keep normal typing;
 holding Space does not repeatedly toggle playback.
 When playback reaches the end, Space or Play restarts from the beginning.
-Below the timeline, enable Keyframe graph. Choose Position XYZ, Translation
-jump (units/frame), or Rotation jump (degrees/frame). Dashed = original solve;
+Left/Right step; Home/End jump to ends; Frame jumps to a number. In/Out (I/O)
+set a range; Clear resets it; Loop repeats it; speed is 0.25x to 2x.
+Source indexing uses ffprobe.exe beside FFmpeg. Stepping enables after indexing.
+Image wheel zooms, middle/right drag pans. Fit / 100% reset scale; Loupe magnifies
+under the pointer; Hide overlays shows the clean picture. Help lists shortcuts.
+Below the timeline, enable Keyframe graph. Choose Position XYZ, Translation XYZ
+(signed units/frame), Translation total (magnitude), or Rotation jump (degrees/frame).
+Translation XYZ: X red, Y green, Z blue. XYZ / X only / Y only / Z only isolates
+an axis and rescales the plot. Negative values indicate the opposite direction.
+The first camera has a zero baseline; frame gaps normalize the displacement and
+remain gaps in the plotted lines. Dashed = original solve;
 solid = current result; amber marks = corrected frames. Click a frame to select
 it. Around frame +/-50 zooms the time range. Gaps mean unsolved cameras.
 Edit X/Y/Z and RX/RY/RZ, then Apply pose. Camera values use the Z-up reconstruction
-coordinates before the Whole scene transform. Interpolate neighbours replaces
-one frame from the previous/next solved cameras; inspect both neighbours first.
+coordinates. Only this frame locks editing to the chosen solved camera frame.
+Other frames can be previewed but their pose controls are read-only. Use current
+frame retargets the lock; Go to edit frame returns to its target. Turning it off
+follows the selected frame, still changing only one camera. The lock resets when
+opening a model/project. It targets solved frames; lower tracking FPS can map
+several source-video frames to one camera. Camera values use reconstruction
+coordinates. You can also drag the X/Y/Z and RX/RY/RZ labels with the horizontal
+arrows: changes apply live without Apply pose. Shift gives 10x finer movement;
+Drag speed selects 0.1x/1x/10x. One completed drag = one Undo step. Esc, focus loss
+or switching frames cancels the unfinished drag. Dragging pauses playback.
+Save/autosave wait until the drag finishes. These are camera pose corrections,
+not manual 2D marker edits or a new solve. The values use reconstruction
+coordinates before the Whole scene transform. Interpolate +/-5 preserves the
+corrected centre and blends five frames on each side to fixed outer cameras.
+Increase the range with the +/- frames control (5 to 100). Inspect outer anchors
+first (normally centre +/-6). Position is linear; rotation takes the shortest arc.
+Missing solved frames are skipped; clip ends remain fixed and shorten the range.
+Existing corrections inside the neighbour range are replaced. This explicit
+range action also works at the pinned centre with Only this frame enabled.
+The whole range is one Undo/Redo step; pose fields/drags remain single-frame edits.
 Reset frame restores the original; Undo reverses edits. The corrected camera
 and trajectory are used in the preview and Export .blend.
 Save corrections / Load corrections use a separate JSON file tied to this exact
@@ -160,5 +193,41 @@ floor plane in the 3D viewport. Click a marker again to deselect. Drag to orbit;
 use the axis gizmo or zoom for a better view. Escape leaves picking mode.
 Align floor to Z = 0 fits the selected plane and moves/rotates the whole scene,
 including cameras, points, mesh and objects, preserving their video alignment.
-Undo floor alignment restores the previous transform. Save project preserves
+Edit > Undo / Undo last edit reverses the last project edit. Save project preserves
 the resulting alignment. Collinear/non-planar selections are rejected.
+
+RECOVERY / THEME
+Unsaved work autosaves every 30 seconds to projects/.recovery separately from
+the manual project. File > Recover autosave restores interrupted sessions; save
+the restored project. Active sessions are excluded. Startup remains empty.
+Recent projects lists recent files. Opening moved assets offers to locate them;
+Save preserves the corrected paths. Media files are still externally referenced.
+Shadow-inspired styling provides neutral dark panels, light text and blue
+selection. Scene & objects includes icons for scene components and editing tools.
+Static primitive geometry is shared by the video overlay and 3D viewport, with
+GPU buffers reused until an object or shading setting changes. This reduces
+playback overhead while preserving the original video and calibrated projection.
+
+TRACK DATA (P1 / FIRST STEP)
+Load a reconstruction, then click Track data below its statistics.
+The table lists registered frames, image IDs and measured/linked/unlinked points.
+Double-click a row or use Go to selected frame to open that solved frame.
+Invalid means a broken data reference or invalid coordinate, not pixel error.
+Unlinked features are normal: they have no reconstructed 3D point.
+Times use the extracted frame number and tracking FPS, not source video indices.
+The full measurements remain separate from viewport sampling and scene edits.
+Large models take longer to import and use more memory; the prepared scene takes
+about 16 seconds locally. Projects reference the original model files as before.
+Manual 2D correction and aggregate error graphs are later steps.
+
+TRACK ERROR OVERLAY (P1 / SECOND STEP)
+Choose Solved frames and enable Track error above the image.
+Circle = measured point; cross = projected 3D point; line = pixel error.
+Green <= 1 px; yellow <= 3 px; red > 3 px, measured in model-image pixels.
+Current camera includes manual corrections. Original solve uses the imported pose.
+Scene/floor transforms and zoom do not change pixel error. Hide overlays hides it.
+Options opens minimum error and maximum markers (default 1000); highest errors
+are prioritised. Invalid/untriangulated observations are excluded; points behind
+the camera are reported as not projectable. Settings are saved with the project.
+Source video uses different frame timing: switch to Solved frames for measured
+diagnostics. Existing 3D overlays remain available on source video.

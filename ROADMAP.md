@@ -10,6 +10,54 @@ konkrétne body a prepočítať výsledok. Prioritou má byť spoľahlivý cyklu
 
 ## Hotové v tejto úprave
 
+[Certain] P0 je implementované a integračne overené; používateľ 13. 11. 2026
+povolil pokračovanie do P1. Zahŕňa zoznam objektov, Show/Lock, premenovanie/duplikáciu/mazanie,
+Frame selected, spoločné Undo/Redo, krokovanie, In/Out/loop/rýchlosť,
+zoom/pan/100 %/lupu, autosave/recovery, recent projects a relink. Zapracovaná je
+aj sivá téma Shadow s modrým výberom a ikonami v Scene & objects.
+
+[Certain] Prvý bod P1 — dátový základ — je implementovaný; používateľ povolil
+pokračovanie k overlayu chyby. Import zachová image/point ID, XY pozorovania, pôvodné XYZ a obojsmerné väzby
+trackov, rozlišuje nepripojené a neplatné pozorovania. Plné dáta sú oddelené od
+preriedeného viewportu. Panel Track data zobrazuje počty po frameoch a umožňuje
+prechod na frame. Testovacia scéna obsahuje 13 836 119 pozorovaní; načítanie trvalo
+približne 16 sekúnd.
+
+[Certain] Druhý bod P1 — overlay reprojekčnej chyby — je implementovaný a čaká
+na používateľský test. Solved frames zobrazuje meranie, projekciu a spojnicu chyby,
+farby podľa pixelovej odchýlky, pôvodnú alebo upravenú kameru a filter/limit značiek.
+Pracuje v priestore importovaného obrazu; pri Source video žiada prepnúť na presnú
+solved snímku. Súhrnné metriky, graf chyby a ručné 2D opravy ešte nie sú súčasťou
+tohto kroku. Ďalší bod počká na test a schválenie.
+
+[Certain] Na požiadanie používateľa je pridané jednoduchšie ručné doladenie kamery:
+ťahanie označení osí X/Y/Z a RX/RY/RZ s okamžitým náhľadom, Shift pre jemný pohyb,
+voľba rýchlosti, jeden krok Undo za ťah a Esc na zrušenie. Ide o opravu pózy kamery;
+editácia 2D markerov zostáva samostatným plánovaným krokom. Táto úprava čaká na test.
+
+[Certain] Doplnok Only this frame uzamkne ručnú opravu kamery na zvolený solved
+frame. Pri prezeraní ostatných snímok sú opravy zablokované; cieľ sa mení explicitne
+cez Use current frame. Overené je zachovanie oboch susedných kamier, existujúcich
+opráv, Undo/Redo a návrat na cieľovú snímku. Režim čaká na používateľský test.
+
+[Certain] Translation graph je rozdelený na podpísané zmeny ΔX/ΔY/ΔZ v osiach
+Z-up rekonštrukcie. Dá sa izolovať jedna os, porovnať pôvodná/upravená krivka
+a prepnúť späť na celkovú veľkosť posunu (Translation total). Overené sú záporné
+hodnoty, normalizácia podľa medzier medzi framami, výber frameu a obnova po Undo.
+
+[Certain] Interpolate ±5 zachová opravený stred a interpoluje päť susedných framov
+na každej strane k pevným vonkajším kamerám. Rozsah je nastaviteľný od ±5 po ±100;
+pri krajoch sa skráti, chýbajúce kamery preskočí. Celý zásah má jeden krok Undo/Redo.
+Ide o explicitnú úpravu rozsahu aj pri zapnutom Only this frame; číselné polia
+a ťahanie stále menia iba stred. Overené sú rotácie cez 180°, zachovanie stredu
+a okolia, uloženie aj export. Táto úprava čaká na používateľský test.
+
+[Certain] Prehrávanie zdieľa pripravenú geometriu objektov medzi oboma náhľadmi
+a opätovne využíva GPU buffery objektov aj povrchového meshu. Pri lokálnom meraní
+4K/29,97 fps klipu so 16 objektmi klesol priemerný čas 3D kreslenia z 2,93 na
+0,62 ms a kreslenia video okna z 6,39 na 4,44 ms. Obe merania zobrazovali približne
+30 fps; prevod video snímkov zostáva najdrahšou časťou a výkon závisí od počítača.
+
 - [Certain] E prepína posun, R rotáciu a T rovnomernú mierku. G ostáva aliasom posunu.
 - [Certain] Scale má štvorcové držadlo; mení objekt alebo celú scénu okolo jej existujúceho pivotu. Esc vráti rozpracovanú zmenu. Nejde o nezávislé škálovanie X/Y/Z.
 - [Certain] Space aj Play po dohraní spustia zdrojové video aj solved frames od začiatku. Uprostred záznamu pokračujú z pozastavenej pozície.
@@ -28,7 +76,10 @@ konkrétne body a prepočítať výsledok. Prioritou má byť spoľahlivý cyklu
 prehľad chyby, zo SynthEyes opravný workflow a exporty. Planárny tracking z Mochy
 má zmysel ako samostatná neskoršia vetva pre výmenu obrazoviek a vkladanie grafiky.
 
-## Audit existujúcej aplikácie
+## Východiskový audit pred implementáciou P0
+
+[Certain] Tabuľka zachytáva pôvodné medzery. Dokončené položky P0 sú uvedené
+vyššie; zvyšné medzery zostávajú plánované.
 
 | Oblasť | Overený stav |
 | --- | --- |
@@ -58,12 +109,12 @@ návrh; okrem položiek označených ako hotové sa týmto dokumentom neimplemen
 
 ### 2. P1 — vidieť, kde a prečo solve zlyháva
 
-[Certain] `pipeline.read_model()` dnes preskočí riadky 2D pozorovaní z `images.txt`
-a pre viewport si neuchová väzby bodov na tracky. To je konkrétna prekážka
-diagnostiky aj ručných opráv, nie iba chýbajúci panel.
+[Certain] Pôvodný import preskakoval 2D pozorovania. Teraz ich `track_data.py`
+zachováva aj s väzbami a kontrolou konzistencie; `pipeline.read_model()` poskytuje
+plné dáta aplikácii a ľahký režim pre export a meshing.
 
-- [Likely] Najprv doplniť dátový model: stabilné image/point/track ID, pozorovania XY, platnosť a väzby na pôvodný frame/čas. Oddeliť plné diagnostické dáta od preriedených bodov pre viewport. Rozsah L.
-- [Likely] Pridať overlay nameraného bodu a jeho vypočítanej projekcie, spojnicu chyby a farbu podľa chyby. Jasne rozlíšiť pôvodný a undistorted obraz. Rozsah M po dátovom modeli.
+- [Certain] **Implementované, pokračovanie povolené:** stabilné image/point ID, track ID = point ID, pozorovanie = image ID + index, XY, platnosť, frame a čas odvodený z tracking FPS; plné diagnostické dáta oddelené od viewportu. Pôvodné mediálne PTS sa zo samotného COLMAP TXT nedajú obnoviť.
+- [Certain] **Implementované, čaká na test:** overlay meranie/projekcia/spojnica a zelená ≤1 px, žltá ≤3 px, červená >3 px; výber pôvodnej/upravenej kamery a limit prednostne najväčších chýb. Používa príslušný model obrazu a presné Solved frames, nemieša originál a undistorted súradnice.
 - [Likely] Zobraziť medián/RMS a vysoký percentil chyby v pixeloch, počty inlierov, dĺžku trackov a rozloženie bodov po obraze. V grafe označiť chýbajúce kamery a skokom prejsť na podozrivý frame. Rozsah M.
 - [Likely] Umožniť vybrať bod v obraze aj 3D a vidieť jeho históriu. Na veľkých modeloch načítavať detaily postupne. Rozsah M.
 
@@ -112,12 +163,12 @@ zmena jej nastavení cache korektne zneplatní. Benchmark zahŕňa krátke aj dl
 - [Likely] Dense stereo, kvalitnejší povrch a textúry až po spoľahlivej kamere a diagnostike; výsledok hodnotiť aj podľa dier a nepodložených plôch. Rozsah XL.
 - [Likely] Pokročilé objektívy, zoom/rolling shutter, stereo a 360° zaradiť ako oddelené rozhodnutia podľa konkrétnych záberov. Vyžadujú overenie backendu aj celého exportného workflow. Rozsah XL.
 
-## Najbližší odporúčaný balík
+## Najbližší krok po schválení overlayu P1
 
-[Likely] Nasledujúci balík má spojiť presné krokovanie, Home/End, Go to frame,
-loop, zoom/100 % a jednotné Undo/Redo. Potom autosave/recovery a dátový základ
-2D trackov. Tieto kroky vytvoria použiteľné prostredie pre kontrolu a opravu
-trackingu pred pridaním ďalších automatických funkcií.
+[Likely] Po používateľskom teste overlayu má nasledovať medián/RMS/vysoký percentil
+chyby, pokrytie obrazu a prehľad podozrivých alebo chýbajúcich frameov. Metriky musia
+používať všetky platné pozorovania, nie iba limitovaný výber zobrazených značiek.
+Výber a história jednotlivých trackov nasledujú potom. Pokračovať po bodoch.
 
 [Likely] Závislosti: diagnostické dáta → chyba a výber tracku → ručné opravy →
 opätovný solve. Exporty a väčšinu základného ovládania možno riešiť samostatne;

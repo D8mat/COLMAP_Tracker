@@ -17,6 +17,7 @@ if layout:
     for item in layout['objects']:
         vertices,faces=mesh_geometry(item['kind']);mesh=bpy.data.meshes.new(item['name']);mesh.from_pydata(vertices.tolist(),[],faces)
         obj=bpy.data.objects.new(item['name'],mesh);bpy.context.scene.collection.objects.link(obj);obj.parent=root;obj.matrix_basis=Matrix(transform_matrix(item).tolist())
+        obj.hide_render=not item.get('visible',True);obj.hide_set(not item.get('visible',True));obj.hide_select=item.get('locked',False)
         mat=bpy.data.materials.new(item['name']);mat.diffuse_color=(*item['color'],1);mat.use_nodes=True
         node=next(n for n in mat.node_tree.nodes if n.type=='BSDF_PRINCIPLED');node.inputs['Base Color'].default_value=(*item['color'],1);obj.data.materials.append(mat)
 if settings.get('mesh'):

@@ -43,8 +43,9 @@ def check():
         QTest.mouseClick(g,Qt.LeftButton,pos=point)
         assert w.frame==3 and e.frame==3
         assert e.track.values(1)[2,0]>7
-        QTest.mouseClick(e.interpolate_button,Qt.LeftButton)
         expected=matrix([0,-5,3],[59,0,0])
+        e.fields[0].setValue(0);QTest.mouseClick(e.apply,Qt.LeftButton)
+        QTest.mouseClick(e.interpolate_button,Qt.LeftButton)
         np.testing.assert_allclose(w.viewport.pose,expected,atol=1e-9)
         np.testing.assert_allclose(w.viewport.path[2,:3],[0,-5,3],atol=1e-6)
         np.testing.assert_allclose(e.track.values(1)[1:,0],.2,atol=1e-9)
@@ -54,7 +55,7 @@ def check():
         floor=w.image.grab().toImage();assert floor!=blank,'Floor did not render'
         w.floor_height.setValue(1);raised=w.image.grab().toImage();assert raised!=floor
         w.floor_height.setValue(0)
-        w.viewport.scene_transform['position']=[1.,2.,.5];w.refresh_overlay()
+        w.viewport.scene_transform['position']=[1.,2.,.5];w.viewport.edited.emit();w.refresh_overlay()
         assert w.image.grab().toImage()!=floor,'Grid ignored whole-scene transform'
         e.fields[0].setValue(.75);e.fields[5].setValue(15)
         QTest.mouseClick(e.apply,Qt.LeftButton)
@@ -72,12 +73,13 @@ def check():
             np.testing.assert_allclose(w.viewport.pose,expected,atol=1e-9)
         finally:
             QFileDialog.getSaveFileName=saved;QFileDialog.getOpenFileName=opened
-        w.select_camera_frame(1);assert not e.interpolate_button.isEnabled()
+        w.select_camera_frame(1);assert e.interpolate_button.isEnabled()
         w.select_camera_frame(3)
         w.viewport.grabFramebuffer();w.grab().save(str(folder/'camera_tools.png'))
-        print('PASS graph click, spike interpolation, numeric rotation, undo, save/load, floor visibility/height/root alignment',flush=True)
+        print('PASS graph click, corrected-centre interpolation, numeric rotation, undo, save/load, floor visibility/height/root alignment',flush=True)
         if not Path(CONFIG['blender']).is_file():
             print('SKIP Blender executable not configured',flush=True);w.project.mark_saved();w.close();app.exit(0);return
+        cube=w.viewport.add_primitive('Cube');cube.update(name='Hidden locked cube',visible=False,locked=True);w.viewport.edited.emit()
         w.start_export(str(folder/'corrected.blend'));QTimer.singleShot(100,export_done)
     except Exception:
         import traceback;traceback.print_exc();app.exit(1)
@@ -98,9 +100,10 @@ np.testing.assert_allclose(np.array(cam.matrix_basis),expected,atol=1e-6)
 np.testing.assert_allclose(np.array(cam.matrix_world)[:3,3],[1,-3,3.5],atol=1e-6)
 path=bpy.data.objects['Camera trajectory']
 np.testing.assert_allclose(path.data.splines[0].points[2].co[:3],[0,-5,3],atol=1e-6)
+cube=bpy.data.objects['Hidden locked cube'];assert cube.hide_render and cube.hide_get() and cube.hide_select
 print('PASS exported corrected camera rotation/location, root transform and trajectory')
 ''',encoding='utf-8')
-        result=subprocess.run([CONFIG['blender'],'--background',str(folder/'corrected.blend'),'--python-exit-code','1','--python',str(verifier)],capture_output=True,text=True,timeout=25,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        result=subprocess.run([CONFIG['blender'],'--background','--factory-startup','--offline-mode','--disable-autoexec',str(folder/'corrected.blend'),'--python-exit-code','1','--python',str(verifier)],capture_output=True,text=True,timeout=25,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         print(result.stdout,flush=True)
         assert result.returncode==0,result.stderr
         w.project.mark_saved();w.close();app.exit(0)

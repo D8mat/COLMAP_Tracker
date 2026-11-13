@@ -21,11 +21,11 @@ class AxisGizmo(QWidget):
         super().__init__(view);self.view=view;self.setFixedSize(126,126);self.hits=[]
         self.setToolTip('Click ±X / ±Y / ±Z for an orthographic view. Drag the viewport to orbit.')
     def paintEvent(self,event):
-        p=QPainter(self);p.setRenderHint(QPainter.Antialiasing);p.setPen(Qt.NoPen);p.setBrush(QColor(24,32,44,220));p.drawEllipse(4,4,118,118)
+        p=QPainter(self);p.setRenderHint(QPainter.Antialiasing);p.setPen(Qt.NoPen);p.setBrush(QColor(31,31,31,220));p.drawEllipse(4,4,118,118)
         yaw,pitch=np.radians([self.view.yaw,self.view.pitch]);back=np.array([np.cos(pitch)*np.cos(yaw),np.cos(pitch)*np.sin(yaw),np.sin(pitch)])
         right=np.array([-np.sin(yaw),np.cos(yaw),0]);up=np.cross(back,right);center=QPointF(63,63);self.hits=[]
         axes=[]
-        for i,(name,color) in enumerate(zip('XYZ',['#ed626b','#71d886','#6aa5ff'])):
+        for i,(name,color) in enumerate(zip('XYZ',['#f0304d','#81cd00','#2f75bd'])):
             for sign in (-1,1):
                 v=np.eye(3)[i]*sign;dx=float(v@right)*43;dy=-float(v@up)*43
                 if dx*dx+dy*dy<100:dx=sign*17;dy=0
@@ -47,7 +47,7 @@ class ManipulatorOverlay(QWidget):
         self.setAttribute(Qt.WA_TransparentForMouseEvents);self.setAttribute(Qt.WA_TranslucentBackground)
         self.setStyleSheet('background: transparent;')
     def paintEvent(self,event):
-        v=self.view;painter=QPainter(self);painter.setPen(QColor('#a8bacf'))
+        v=self.view;painter=QPainter(self);painter.setPen(QColor('#7cadf0'))
         painter.drawText(16,26,'3D SCENE   /   Z UP')
         target='whole scene' if v.selected<0 else v.objects[v.selected]['name']
         action='Click floor points · Drag to orbit' if v.floor_pick else ('Click: select · Drag background: orbit' if v.mode=='Orbit' else v.mode+' '+target+(' · Drag square: uniform scale' if v.mode=='Scale' else ' · Drag an axis handle'))
@@ -67,6 +67,7 @@ class Viewport(QOpenGLWidget):
     floor_spacing=1.
     floor_height=0.
     edited=Signal()
+    hierarchy_changed=Signal()
     mode_changed=Signal(str)
     floor_selection_changed=Signal()
     floor_pick_cancelled=Signal()
@@ -75,6 +76,7 @@ class Viewport(QOpenGLWidget):
         self.setMinimumSize(320,300)
         self.center = np.zeros(3); self.distance = 12.; self.yaw = -70.; self.pitch = 25.
         self.points = np.empty((0,6),np.float32); self.path = np.empty((0,6),np.float32)
+        self.point_ids=np.empty(0,np.int64)
         self.pose = None; self.show_points = True; self.show_path = True
         self.point_size = 2.; self.dirty = True; self.gpu_error = ''; self.ready = False
         self.camera_scale = .3
@@ -86,15 +88,32 @@ class Viewport(QOpenGLWidget):
         self.cancelled_drag=False
         self.floor_pick=False;self.floor_indices=[]
         self.mesh=None;self.mesh_path=None;self.show_mesh=True;self.shading='Vertex color';self.smooth_mesh=True;self._mesh_preview=None;self._mesh_preview_key=None
+        self._objects_preview=None;self._objects_preview_key=None
 
     def set_mesh(self,mesh):
         self.mesh=mesh;self.mesh_path=mesh.get('path') if mesh else None;self._mesh_preview=None;self._mesh_preview_key=None;self.update()
+        self.hierarchy_changed.emit()
 
     def mesh_preview(self):
         key=(id(self.mesh),self.shading,self.smooth_mesh)
         if key!=self._mesh_preview_key:
             self._mesh_preview=triangle_buffer(self.mesh,self.shading,self.smooth_mesh);self._mesh_preview_key=key
         return self._mesh_preview
+
+    def objects_preview(self):
+        # Both views share immutable geometry; camera motion only changes uniforms.
+        # A value key also catches direct edits, undo, project loads and gizmo drags.
+        key=(repr(self.objects),self.selected,self.shading,self.smooth_mesh)
+        if key!=self._objects_preview_key:
+            parts=[]
+            for index,item in enumerate(self.objects):
+                if not item.get('visible',True):continue
+                part=triangle_buffer(primitive_mesh(item),self.shading,self.smooth_mesh)
+                if index==self.selected:part[:,3:]=np.minimum(1,part[:,3:]+.12)
+                parts.append(part)
+            self._objects_preview=np.concatenate(parts) if parts else np.empty((0,6),np.float32)
+            self._objects_preview_key=key
+        return self._objects_preview
 
     def set_mode(self,mode):
         self.mode=mode;self.handles=[];self.update()
@@ -117,6 +136,7 @@ class Viewport(QOpenGLWidget):
         if self.view_projection is None:return None
         origin,direction=self.ray(point);root=transform_matrix(self.scene_transform);best=(float('inf'),None)
         for index,item in enumerate(self.objects):
+            if not item.get('visible',True) or item.get('locked',False):continue
             for triangle in object_triangles(item):
                 world=triangle@root[:3,:3].T+root[:3,3];hit=ray_triangle(origin,direction,world)
                 if hit is not None and hit<best[0]:best=(hit,index)
@@ -152,6 +172,7 @@ class Viewport(QOpenGLWidget):
     def draw_manipulator(self,painter):
         self.handles=[]
         if self.floor_pick:return
+        if self.active_transform().get('locked',False) or not self.active_transform().get('visible',True):return
         if self.mode not in ('Move','Rotate','Scale') or self.view_projection is None:return
         pivot,basis=self.manipulator_frame();screen=self.project(pivot)
         if screen is None:return
@@ -172,7 +193,7 @@ class Viewport(QOpenGLWidget):
             painter.drawEllipse(QPointF(*a),5,5)
             self.handles.append(dict(axis_index=3,axis=basis[:,0].copy(),pivot=pivot.copy(),a=a+direction*13,b=b,length=length))
             return
-        for index,color in enumerate(['#f06470','#73dc8c','#72adff']):
+        for index,color in enumerate(['#f0304d','#81cd00','#2f75bd']):
             axis=basis[:,index];active=self.hover_axis==index or (self.drag and self.drag['axis_index']==index)
             painter.setPen(QPen(QColor('#ffe392') if active else QColor(color),4 if active else 3))
             painter.setBrush(QColor('#ffe392') if active else QColor(color))
@@ -264,7 +285,7 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
             if not self.program.addShaderFromSourceCode(QOpenGLShader.Fragment, fragment) or not self.program.link():
                 raise RuntimeError(self.program.log())
             self.vao = QOpenGLVertexArrayObject(); self.vao.create()
-            self.buffers = {}
+            self.buffers = {};self._uploaded_geometry={}
             for key in ('points','path','lines','camera','objects','surface'):
                 b = QOpenGLBuffer(); b.create(); self.buffers[key] = b
             self.ready = True
@@ -279,9 +300,10 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
         self.ready = False
         self.doneCurrent()
 
-    def set_model(self, points, poses):
+    def set_model(self, points, poses, point_ids=None):
         self.floor_indices=[];self.floor_selection_changed.emit()
-        sample = points[::max(1, math.ceil(len(points)/200000))]
+        stride=max(1, math.ceil(len(points)/200000));sample = points[::stride]
+        self.point_ids=np.asarray(point_ids,dtype=np.int64)[::stride].copy() if point_ids is not None else np.empty(0,np.int64)
         xyz = np.array([p[0] for p in sample],np.float32).reshape(-1,3) @ WORLD.T
         colors = np.array([p[1] for p in sample],np.float32).reshape(-1,3)
         self.points = np.ascontiguousarray(np.concatenate((xyz,colors),axis=1),np.float32)
@@ -289,6 +311,7 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
         self.path = np.ascontiguousarray(np.column_stack((positions,np.tile([.2,.75,1],(len(poses),1)))),np.float32)
         self.dirty = True
         self.fit()
+        self.hierarchy_changed.emit()
 
     def fit(self):
         if len(self.points):
@@ -303,15 +326,18 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
         self.pose = camera_matrix(pose) if pose else None
         self.update()
 
-    def update_camera_path(self,poses):
-        self.path[:,:3]=np.array([camera_matrix(p)[:3,3] for p in poses])
+    def update_camera_path(self,poses,matrices=None):
+        self.path[:,:3]=matrices[:,:3,3] if matrices is not None else np.array([camera_matrix(p)[:3,3] for p in poses])
         self.dirty=True
         self.update()
 
     def draw_buffer(self, key, data, mode, upload=True):
         self.vao.bind(); b = self.buffers[key]; b.bind()
+        if key in ('objects','surface'):
+            upload=self._uploaded_geometry.get(key) is not data
         if upload:
             raw = np.ascontiguousarray(data,np.float32).tobytes(); b.allocate(raw,len(raw))
+            if key in ('objects','surface'):self._uploaded_geometry[key]=data
         self.program.enableAttributeArray(0); self.program.enableAttributeArray(1)
         self.program.setAttributeBuffer(0,0x1406,0,3,24)
         self.program.setAttributeBuffer(1,0x1406,12,3,24)
@@ -320,7 +346,7 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
 
     def paintGL(self):
         if self.ready:
-            g=self.gl; g.glClearColor(.055,.065,.085,1); g.glClear(0x4000|0x0100)
+            g=self.gl; g.glClearColor(23/255,23/255,23/255,1); g.glClear(0x4000|0x0100)
             g.glEnable(0x0B71); g.glEnable(0x8642)
             yaw,pitch = math.radians(self.yaw),math.radians(self.pitch)
             offset = np.array([math.cos(pitch)*math.cos(yaw), math.cos(pitch)*math.sin(yaw), math.sin(pitch)])*self.distance
@@ -358,13 +384,8 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
                 for a,b in ((0,1),(0,2),(0,3),(0,4),(1,2),(2,3),(3,4),(4,1)):
                     segment(verts[a],verts[b],(1,.7,.2))
             self.draw_buffer('camera',lines,0x0001)
-            triangles=[]
-            for index,item in enumerate(self.objects):
-                data=triangle_buffer(primitive_mesh(item),self.shading,self.smooth_mesh)
-                if index==self.selected:data[:,3:]=np.minimum(1,data[:,3:]+.12)
-                triangles.append(data)
-            if triangles:
-                data=np.concatenate(triangles)
+            data=self.objects_preview()
+            if len(data):
                 if self.shading!='Wireframe':
                     g.glEnable(0x8037);g.glPolygonOffset(1.,1.);self.draw_buffer('objects',data,0x0004);g.glDisable(0x8037)
                 if self.shading in ('Wireframe','Solid + wire'):
@@ -412,7 +433,7 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
         if self.cancelled_drag:
             self.cancelled_drag=False;self.press_point=None;self.press_hit=None;return
         if self.drag:
-            self.update_drag(event.position());self.drag=None;self.unsetCursor();self.update()
+            self.update_drag(event.position());self.drag=None;self.unsetCursor();self.edited.emit();self.update()
         elif event.button()==Qt.LeftButton and not self.orbit_drag and self.press_hit is None:
             self.selected=-1;self.edited.emit();self.update()
         self.press_point=None;self.press_hit=None

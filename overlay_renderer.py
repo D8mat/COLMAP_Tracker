@@ -5,7 +5,6 @@ from PySide6.QtGui import QOpenGLContext, QOffscreenSurface, QSurfaceFormat, QMa
 from PySide6.QtOpenGL import (QOpenGLFunctions_3_3_Core, QOpenGLShader, QOpenGLShaderProgram,
     QOpenGLBuffer, QOpenGLVertexArrayObject, QOpenGLFramebufferObject, QOpenGLFramebufferObjectFormat,QOpenGLTexture)
 from scene_geometry import mesh_geometry, transform_matrix
-from mesh_data import triangle_buffer
 from lens_warp import distortion_map,lens_parameters
 
 
@@ -160,13 +159,7 @@ frag=sampleUV.x<0?vec4(0):texture(scene,sampleUV);}'''
             geometry = []
             if mesh and view.mesh is not None: geometry.append(('surface', view.mesh_preview()))
             if objects and view.objects:
-                parts=[]
-                for index,item in enumerate(view.objects):
-                    part=triangle_buffer(primitive_mesh(item), view.shading, view.smooth_mesh)
-                    if index==view.selected:part[:,3:]=np.minimum(1,part[:,3:]+.12)
-                    parts.append(part)
-                data = np.concatenate(parts)
-                geometry.append(('objects', data))
+                geometry.append(('objects',view.objects_preview()))
             if view.shading != 'Wireframe':
                 gl.glEnable(0x8037); gl.glPolygonOffset(1., 1.)
                 for name, data in geometry: self.draw(name, data, 0x0004)

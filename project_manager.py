@@ -3,12 +3,13 @@ import copy
 import json
 from pathlib import Path
 import numpy as np
-from PySide6.QtCore import QObject,QThread,Signal,QTimer,QUrl
+from PySide6.QtCore import QObject,QThread,Signal,QTimer,QUrl,QSize
 from PySide6.QtGui import QAction,QKeySequence
 from PySide6.QtWidgets import QFileDialog,QMessageBox,QCheckBox,QComboBox,QLineEdit
 from pipeline import ROOT
 from scene_geometry import identity_transform
 from project_io import write_project,read_project
+from project_recovery import Recovery,relink_document
 
 TRACKING=('solver','fps','size','seconds','overlap','gpu','mask','output','import_rate')
 VIEW=('floor_toggle','floor_spacing','floor_height','overlay_toggle','cloud_toggle','mesh_toggle','overlay_alpha','points_toggle','path_toggle','graph_toggle')
@@ -31,9 +32,9 @@ def assign(widget,data):
 
 class ProjectLoader(QThread):
     loaded=Signal(object);failed=Signal(str)
-    def __init__(self,path):super().__init__();self.path=path
+    def __init__(self,path,data=None):super().__init__();self.path=path;self.data=data
     def run(self):
-        try:self.loaded.emit(read_project(self.path))
+        try:self.loaded.emit(read_project(self.path,self.data))
         except Exception as exc:self.failed.emit(str(exc))
 
 
@@ -41,11 +42,12 @@ class ProjectManager(QObject):
     def __init__(self,window):
         super().__init__(window);self.w=window;self.path=None;self.restoring=False
         self.defaults=self.snapshot();self.baseline=self.signature()
-        menu=window.menuBar().addMenu('&File');self.actions={}
+        menu=window.menuBar().addMenu('&File');self.menu=menu;self.actions={}
         for name,shortcut,callback in [('New project','Ctrl+N',self.new),('Open video…','Ctrl+O',self.open_video),('Open project…','Ctrl+Shift+O',self.open),('Save project','Ctrl+S',self.save),('Save project as…','Ctrl+Shift+S',lambda:self.save(force_path=True)),('Exit','Alt+F4',window.close)]:
             if name=='Exit':menu.addSeparator()
             action=QAction(name,window);action.setShortcut(QKeySequence(shortcut));action.triggered.connect(callback);menu.addAction(action);self.actions[name]=action
         self.timer=QTimer(self);self.timer.timeout.connect(self.update_title);self.timer.start(400)
+        self.recovery=Recovery(self)
 
     def snapshot(self):
         w=self.w;v=w.viewport
@@ -56,6 +58,9 @@ class ProjectManager(QObject):
             meshing={k:value(getattr(w.mesh_panel,k)) for k in MESH},
             orbit=dict(center=v.center.tolist(),distance=v.distance,yaw=v.yaw,pitch=v.pitch,orthographic=v.orthographic),
             playback=dict(frame=w.frame,source_mode=w.source_mode,position=w.player.position()))
+        if hasattr(w,'transport'):data['transport']=w.transport.document()
+        data['diagnostics']=dict(enabled=w.error_toggle.isChecked(),original=w.error_pose.currentIndex()==1,
+            minimum=w.track_data_panel.minimum_error.value(),limit=w.track_data_panel.marker_limit.value())
         return copy.deepcopy(data)
 
     def signature(self):
@@ -73,6 +78,7 @@ class ProjectManager(QObject):
 
     def available(self):
         w=self.w
+        if w.camera_editor.dragging:w.status.setText('Finish the camera drag or press Esc first.');return False
         if w.loader is not None or w.job or w.mesh_panel.running or w.export_process:
             w.status.setText('Finish or cancel the current operation first.');return False
         return True
@@ -93,24 +99,34 @@ class ProjectManager(QObject):
             target=Path(selected)
         try:write_project(target,self.snapshot())
         except Exception as exc:QMessageBox.warning(self.w,'Cannot save project',str(exc));return False
-        self.path=target.resolve();self.mark_saved();self.w.status.setText('Project saved: '+str(self.path));return True
+        self.path=target.resolve();self.mark_saved();self.recovery.discard();self.recovery.remember(self.path);self.w.status.setText('Project saved: '+str(self.path));return True
 
     def clear(self,reset_settings=True):
+        self.w.camera_editor.cancel_drag()
         w=self.w;w.pause();w.player.setSource(QUrl());w.mesh_after_tracking=False
+        self.recovery.discard()
         w.frame_cache.configure(None,[]);w._requested_frame=None;w._pending_video_frame=None
+        w._source_image=None
+        w.track_data=None;w.track_data_panel.set_tracks(None,30.);w.track_data_button.setEnabled(False);w.track_data_dock.hide()
+        for widget in (w.image,w.video_widget):widget.reprojection.clear()
         if hasattr(w,'pending_source_position'):del w.pending_source_position
         w.source_mode=False;w.model_folder=None;w.images=None;w.model_fps=30.;w.model_video='';w.poses=[];w.pose_by_frame={};w.cameras={};w.source_cameras={};w.last_job_folder=None;w.frame=1
         v=w.viewport;w.floor_panel.reset();v.points=np.empty((0,6),np.float32);v.path=np.empty((0,6),np.float32);v.pose=None;v.dirty=True;v.set_mesh(None)
+        v.point_ids=np.empty(0,np.int64)
         v.objects=[];v.scene_transform=identity_transform();v.selected=-1;v.set_mode('Orbit');w.edit_mode.setCurrentText('Orbit');v.center=np.zeros(3);v.distance=12.;v.fit();w.editor.refresh()
-        e=w.camera_editor;e.track=None;e.graph.track=None;e.file_path=None;e.set_frame(1)
+        e=w.camera_editor;e.reset_frame_scope();e.track=None;e.graph.track=None;e.file_path=None;e.set_frame(1)
         for widget in (w.image,w.video_widget):widget.clear();widget.camera=None;widget.renderer.cache_key=None
+        for widget in (w.image,w.video_widget):widget.native_size=QSize();widget.fit_image()
         w.image.setText('Open a video or project');w.image_stack.setCurrentWidget(w.image);w.image_title.setText('IMAGE / SOURCE')
         w.slider.blockSignals(True);w.slider.setRange(1,1);w.slider.setValue(1);w.slider.blockSignals(False);w.time_label.setText('—')
         w.video.clear();w.export_button.setEnabled(False);w.mesh_panel.export_button.setEnabled(False);w.mesh_panel.status.setText('No mesh loaded');w.mesh_panel.progress.setRange(0,1);w.mesh_panel.progress.setValue(0)
         w.progress.setValue(0);w.stats.setText('No reconstruction loaded');w.console.clear()
         if reset_settings:
             self.restore_controls(self.defaults)
+        if hasattr(w,'transport'):w.transport.reset()
         self.path=None;w.refresh_overlay();self.mark_saved()
+        if hasattr(w,'history'):w.history.reset()
+        w.refresh_reprojection()
 
     def new(self):
         if not self.available() or not self.confirm_discard():return False
@@ -139,17 +155,27 @@ class ProjectManager(QObject):
     def restore_controls(self,data):
         for section,owner,names in [('tracking',self.w,TRACKING),('view',self.w,VIEW),('meshing',self.w.mesh_panel,MESH)]:
             for key in names:assign(getattr(owner,key),data[section][key])
+        diagnostics=data.get('diagnostics',dict(enabled=False,original=False,minimum=0.,limit=1000))
+        self.w.error_toggle.setChecked(diagnostics['enabled']);self.w.error_pose.setCurrentIndex(int(diagnostics['original']))
+        self.w.track_data_panel.minimum_error.setValue(diagnostics['minimum']);self.w.track_data_panel.marker_limit.setValue(diagnostics['limit'])
+        self.w.refresh_reprojection()
 
     def open(self):
         if not self.available():return
         path,_=QFileDialog.getOpenFileName(self.w,'Open project','','Tracker project (*.tracker.json);;JSON (*.json)')
-        if path:self.open_path(path)
+        if path:self.open_path(path,relink=True)
 
-    def open_path(self,path):
+    def open_path(self,path,recovery=False,relink=False):
         if not self.available() or not self.confirm_discard():return False
+        data=None
+        if relink or recovery:
+            try:data=relink_document(self.w,path)
+            except Exception as exc:self.failed(str(exc));return False
+            if data is None:return False
         w=self.w;w.pause();self.opening_path=Path(path).resolve();self.restoring=True
+        self.opening_recovery=recovery;self.opening_relinked=bool(data and data.get('_relinked'))
         w.centralWidget().setEnabled(False);w.editor_dock.setEnabled(False);w.mesh_dock.setEnabled(False);w.floor_dock.setEnabled(False)
-        w.loader=ProjectLoader(path);w.loader.loaded.connect(self.apply);w.loader.failed.connect(self.failed);w.loader.finished.connect(self.finished);w.loader.start();w.set_busy(True)
+        w.loader=ProjectLoader(path,data);w.loader.loaded.connect(self.apply);w.loader.failed.connect(self.failed);w.loader.finished.connect(self.finished);w.loader.start();w.set_busy(True)
         w.status.setText('Opening project…');return True
 
     def failed(self,message):
@@ -175,7 +201,15 @@ class ProjectManager(QObject):
             w.preview_source();w.pending_source_position=play['position'];w.player.setPosition(play['position'])
         elif w.poses:
             w.slider.setValue(max(w.slider.minimum(),min(w.slider.maximum(),play['frame'])));w.seek(w.slider.value())
-        self.path=self.opening_path;self.mark_saved();w.status.setText('Project opened: '+str(self.path))
+        if hasattr(w,'transport'):w.transport.restore(data.get('transport',{}))
+        self.path=self.opening_path;self.mark_saved()
+        if self.opening_recovery:
+            self.path=Path(data['recovery_source']) if data.get('recovery_source') else None;self.baseline=''
+            w.status.setText('Autosave recovered — save the project to keep this version')
+        else:
+            self.recovery.remember(self.path);w.status.setText('Project opened: '+str(self.path))
+            if self.opening_relinked:self.baseline=''
+        if hasattr(w,'history'):w.history.reset()
 
     def finished(self):
         w=self.w;w.loader.deleteLater();w.loader=None;self.restoring=False

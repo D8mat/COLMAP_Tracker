@@ -31,6 +31,8 @@ def check():
             w.video.setFocus();QTest.keyClick(w.video,Qt.Key_E);assert w.viewport.mode=='Scale';w.video.setText(source_path)
             w.slider.setFocus();QTest.keyClick(w.slider,Qt.Key_R,Qt.ControlModifier);assert w.viewport.mode=='Scale'
             w.mesh_toggle.setChecked(True);w.cloud_toggle.setChecked(True);w.select_camera_frame(300)
+            # Settle the layout after loading metadata before measuring graph reuse.
+            app.processEvents()
             w.camera_editor.graph.repaint();cache_key=w.camera_editor.graph.plot_cache.cacheKey()
             w.toggle_play();origin=w.play_origin;stage=1
         elif stage==1 and time.perf_counter()-origin>3:

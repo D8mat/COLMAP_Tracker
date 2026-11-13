@@ -55,7 +55,7 @@ def load_cloud(mesh):
 
 
 def import_model(folder, images, fps, camera_corrections=None):
-    cameras, poses, points = read_model(folder)
+    cameras, poses, points = read_model(folder,with_tracks=False)
     if not poses:
         raise ValueError('This model has no registered cameras.')
     from camera_track import CameraTrack,camera_matrix
