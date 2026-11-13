@@ -489,3 +489,16 @@ The importer is implemented independently from the
 [COLMAP output format](https://colmap.github.io/format.html).
 The optional [Blender Photogrammetry Importer](https://github.com/SBCV/Blender-Addon-Photogrammetry-Importer)
 is not bundled or installed. External tools and dependencies retain their own licenses.
+
+## Repository layout
+
+- `app/`: application modules and workers.
+- `tests/`: unit tests and interactive validation scripts.
+- `docs/`: help and roadmap.
+- `projects/`: user projects and reconstruction output (paths preserved).
+- `validation/`: generated test artifacts.
+- `temp/`: older loose previews and logs.
+
+Launch with `Start_Tracker.cmd`; configuration and setup remain at the root.
+Run unit tests with `python -m unittest discover -s tests -p "test_*.py"`.
+Run interactive checks with `python tests/validate_image_sequence.py`.
