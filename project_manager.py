@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from PySide6.QtCore import QObject,QThread,Signal,QTimer,QUrl,QSize
 from PySide6.QtGui import QAction,QKeySequence
-from PySide6.QtWidgets import QFileDialog,QMessageBox,QCheckBox,QComboBox,QLineEdit
+from PySide6.QtWidgets import QFileDialog,QMessageBox,QCheckBox,QComboBox,QLineEdit,QInputDialog
 from pipeline import ROOT
 from scene_geometry import identity_transform
 from project_io import write_project,read_project
@@ -34,7 +34,12 @@ class ProjectLoader(QThread):
     loaded=Signal(object);failed=Signal(str)
     def __init__(self,path,data=None):super().__init__();self.path=path;self.data=data
     def run(self):
-        try:self.loaded.emit(read_project(self.path,self.data))
+        try:
+            payload=read_project(self.path,self.data)
+            if payload[0].get('sequence'):
+                from sequence_preview import first_size
+                payload[0]['sequence']['size']=first_size(payload[0]['assets']['sequence'],payload[0]['sequence'])
+            self.loaded.emit(payload)
         except Exception as exc:self.failed.emit(str(exc))
 
 
@@ -43,7 +48,7 @@ class ProjectManager(QObject):
         super().__init__(window);self.w=window;self.path=None;self.restoring=False
         self.defaults=self.snapshot();self.baseline=self.signature()
         menu=window.menuBar().addMenu('&File');self.menu=menu;self.actions={}
-        for name,shortcut,callback in [('New project','Ctrl+N',self.new),('Open video…','Ctrl+O',self.open_video),('Open project…','Ctrl+Shift+O',self.open),('Save project','Ctrl+S',self.save),('Save project as…','Ctrl+Shift+S',lambda:self.save(force_path=True)),('Exit','Alt+F4',window.close)]:
+        for name,shortcut,callback in [('New project','Ctrl+N',self.new),('Open video…','Ctrl+O',self.open_video),('Open image sequence…','Ctrl+Alt+O',self.open_sequence),('Open project…','Ctrl+Shift+O',self.open),('Save project','Ctrl+S',self.save),('Save project as…','Ctrl+Shift+S',lambda:self.save(force_path=True)),('Exit','Alt+F4',window.close)]:
             if name=='Exit':menu.addSeparator()
             action=QAction(name,window);action.setShortcut(QKeySequence(shortcut));action.triggered.connect(callback);menu.addAction(action);self.actions[name]=action
         self.timer=QTimer(self);self.timer.timeout.connect(self.update_title);self.timer.start(400)
@@ -61,6 +66,11 @@ class ProjectManager(QObject):
         if hasattr(w,'transport'):data['transport']=w.transport.document()
         data['diagnostics']=dict(enabled=w.error_toggle.isChecked(),original=w.error_pose.currentIndex()==1,
             minimum=w.track_data_panel.minimum_error.value(),limit=w.track_data_panel.marker_limit.value())
+        if w.sequence.selected:
+            data['assets']['video']='';data['assets']['sequence']=w.sequence.folder;data['sequence']=w.sequence.data
+            if data['assets']['model_video']==w.sequence.folder:
+                data['assets']['model_sequence']=w.sequence.folder;data['assets']['model_video']=''
+            if w.sequence.active:data['playback']['frame']=w.sequence.frame
         return copy.deepcopy(data)
 
     def signature(self):
@@ -104,6 +114,7 @@ class ProjectManager(QObject):
     def clear(self,reset_settings=True):
         self.w.camera_editor.cancel_drag()
         w=self.w;w.pause();w.player.setSource(QUrl());w.mesh_after_tracking=False
+        w.sequence.clear()
         self.recovery.discard()
         w.frame_cache.configure(None,[]);w._requested_frame=None;w._pending_video_frame=None
         w._source_image=None
@@ -137,6 +148,24 @@ class ProjectManager(QObject):
         selected,_=QFileDialog.getOpenFileName(self.w,'Open video','','Video (*.mp4 *.mov *.mkv *.avi *.m4v);;All files (*)')
         if not selected or not self.confirm_discard():return
         self.clear(reset_settings=False);self.w.video.setText(selected);self.w.preview_source()
+
+    def open_sequence(self):
+        if not self.available():return
+        selected=QFileDialog.getExistingDirectory(self.w,'Open image sequence — PNG, JPG, EXR, TIFF')
+        if not selected:return
+        fps,accepted=QInputDialog.getDouble(self.w,'Sequence frame rate','Source FPS (images per second):',30.,.1,240.,3)
+        if not accepted or not self.confirm_discard():return
+        from sequence_preview import SequenceLoader
+        w=self.w;w.pause();w.loader=SequenceLoader(selected,fps)
+        w.loader.loaded.connect(self.sequence_loaded);w.loader.failed.connect(self.failed);w.loader.finished.connect(w.loader_finished)
+        w.set_busy(True);w.status.setText('Reading image sequence…');w.loader.start()
+
+    def sequence_loaded(self,payload):
+        folder,data=payload;self.clear(reset_settings=False)
+        w=self.w;w.sequence.configure(folder,data);w.preview_source()
+        w.fps.setValue(min(w.fps.value(),data['fps']))
+        w.stats.setText(f'{len(data["files"]):,} source images\n{data["fps"]:g} fps · {data["size"][0]} × {data["size"][1]}')
+        w.status.setText('Sequence loaded in natural filename order. Gaps in filenames are played consecutively.')
 
     def validate_controls(self,data):
         for section,owner,names in [('tracking',self.w,TRACKING),('view',self.w,VIEW),('meshing',self.w.mesh_panel,MESH)]:
@@ -187,9 +216,10 @@ class ProjectManager(QObject):
         try:self.validate_controls(data)
         except Exception as exc:self.failed(str(exc));return
         w=self.w;self.clear();w.video.setText(data['assets']['video'])
+        if data.get('sequence'):w.sequence.configure(data['assets']['sequence'],data['sequence'])
         if model:
             w.pending=(Path(data['assets']['model']),Path(data['assets']['images']) if data['assets']['images'] else None,data['model_fps'])
-            w.model_loaded(model);w.model_video=data['assets']['model_video']
+            w.model_loaded(model);w.model_video=data['assets'].get('model_sequence') or data['assets']['model_video']
             if data.get('camera_corrections'):w.camera_editor.track.load_document(data['camera_corrections']);w.viewport.update_camera_path(w.poses)
         w.viewport.scene_transform=data['layout']['scene'];w.viewport.objects=data['layout']['objects'];w.viewport.selected=-1;w.editor.refresh()
         if data['assets']['mesh']:w.mesh_panel.accept_mesh(data['assets']['mesh'])
@@ -197,7 +227,9 @@ class ProjectManager(QObject):
         for key in ('distance','yaw','pitch','orthographic'):setattr(w.viewport,key,data['orbit'][key])
         w.viewport.gizmo.update();w.viewport.update();w.refresh_overlay()
         play=data['playback']
-        if play['source_mode'] and w.video.text():
+        if w.sequence.selected and (play['source_mode'] or not w.poses):
+            w.preview_source();w.sequence.request(play['frame'])
+        elif play['source_mode'] and w.video.text():
             w.preview_source();w.pending_source_position=play['position'];w.player.setPosition(play['position'])
         elif w.poses:
             w.slider.setValue(max(w.slider.minimum(),min(w.slider.maximum(),play['frame'])));w.seek(w.slider.value())

@@ -36,6 +36,7 @@ from transport import Transport
 from edit_history import EditHistory
 from ui_theme import STYLE
 from track_data_panel import TrackDataPanel
+from sequence_preview import SequencePreview
 
 SAMPLE=Path(CONFIG['sample_project']) if CONFIG.get('sample_project') else ROOT/'sample_project'
 
@@ -68,6 +69,7 @@ class Window(QMainWindow):
         header=QHBoxLayout(); brand=QLabel('ALIEN TRACKER'); brand.setObjectName('brand')
         header.addWidget(brand); header.addStretch()
         self.open_button=self.button('Open video',self.open_video,header)
+        self.sequence_button=self.button('Open sequence',lambda:self.project.open_sequence(),header)
         self.sample_button=self.button('Prepared scene',self.sample,header)
         self.import_button=self.button('Import TXT model',self.choose_model,header)
         self.export_button=self.button('Export .blend',self.export_blend,header); self.export_button.setEnabled(False)
@@ -76,10 +78,10 @@ class Window(QMainWindow):
         split=QSplitter(); layout.addWidget(split,1)
         panel=QWidget(); form=QVBoxLayout(panel); panel.setMaximumWidth(340); panel.setMinimumWidth(270)
         title=QLabel('TRACKING'); title.setObjectName('section'); form.addWidget(title)
-        self.video=QLineEdit(); self.video.setPlaceholderText('Choose a video file…'); form.addWidget(self.video)
+        self.video=QLineEdit(); self.video.setPlaceholderText('Choose a video or image sequence…'); form.addWidget(self.video)
         self.settings=QGroupBox('Reconstruction settings'); fields=QFormLayout(self.settings)
         self.solver=QComboBox(); self.solver.addItems(['COLMAP','GLOMAP']); fields.addRow('Solver',self.solver)
-        self.fps=QSpinBox(); self.fps.setRange(1,60); self.fps.setValue(6); fields.addRow('Tracking FPS',self.fps)
+        self.fps=QDoubleSpinBox(); self.fps.setRange(.1,60); self.fps.setDecimals(3); self.fps.setValue(6); fields.addRow('Tracking FPS',self.fps)
         self.size=QSpinBox(); self.size.setRange(640,8192); self.size.setSingleStep(160); self.size.setValue(1920); fields.addRow('Max image size',self.size)
         self.seconds=QDoubleSpinBox(); self.seconds.setRange(0,99999); self.seconds.setSuffix(' s'); fields.addRow('First seconds¹',self.seconds)
         self.overlap=QSpinBox(); self.overlap.setRange(2,100); self.overlap.setValue(10); fields.addRow('Neighbour frames',self.overlap)
@@ -87,7 +89,7 @@ class Window(QMainWindow):
         self.mask=QLineEdit(); self.mask.setPlaceholderText('Optional static mask'); fields.addRow('Mask',self.mask)
         self.button('Choose mask…',self.choose_mask,fields)
         form.addWidget(self.settings)
-        note=QLabel('¹ 0 = full video. FPS resamples the video.\nMask: black ignores pixels, white tracks them.'); note.setWordWrap(True); form.addWidget(note)
+        note=QLabel('¹ 0 = full clip. Tracking FPS samples the source.\nSequence FPS is chosen when opening its folder.\nMask: black ignores pixels, white tracks them.'); note.setWordWrap(True); form.addWidget(note)
         self.output=QLineEdit(str(ROOT/'projects')); form.addWidget(QLabel('Project output')); form.addWidget(self.output)
         self.button('Choose output folder…',self.choose_output,form)
         controls=QHBoxLayout(); self.start=self.button('Start tracking',self.start_job,controls); self.start.setObjectName('primary')
@@ -147,7 +149,7 @@ class Window(QMainWindow):
         self.play.setToolTip('Play / pause (Space)')
         self.slider=QSlider(Qt.Horizontal); self.slider.setRange(1,1); self.slider.valueChanged.connect(self.seek); timeline.addWidget(self.slider,1)
         self.time_label=QLabel('—'); self.time_label.setMinimumWidth(160); timeline.addWidget(self.time_label); work_layout.addLayout(timeline)
-        mode=QHBoxLayout(); self.button('Source video',self.preview_source,mode); self.button('Solved frames',self.preview_solved,mode)
+        mode=QHBoxLayout(); self.button('Source',self.preview_source,mode); self.button('Solved frames',self.preview_solved,mode)
         self.import_rate=QDoubleSpinBox(); self.import_rate.setDecimals(5); self.import_rate.setRange(.1,240); self.import_rate.setValue(30000/1001); mode.addWidget(QLabel('Import FPS')); mode.addWidget(self.import_rate); mode.addStretch(); work_layout.addLayout(mode)
         self.graph_toggle=QCheckBox('Keyframe graph');self.graph_toggle.setChecked(True);mode.addWidget(self.graph_toggle)
         self.camera_editor=CameraEditor();work_layout.addWidget(self.camera_editor)
@@ -168,6 +170,7 @@ class Window(QMainWindow):
         self.player.playbackStateChanged.connect(self.source_playback_changed)
         self.player.mediaStatusChanged.connect(self.source_media_status)
         self.player.errorOccurred.connect(lambda *_:self.status.setText(self.player.errorString()))
+        self.sequence=SequencePreview(self)
         self.transport=Transport(self,work_layout)
         work_layout.insertWidget(2,self.transport.bar)
         self.timer=QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(30)
@@ -217,6 +220,7 @@ class Window(QMainWindow):
         self.refresh_image_view()
     def refresh_image_view(self):
         if not hasattr(self,'player'):return
+        if hasattr(self,'sequence') and self.sequence.active:self.sequence.request(self.sequence.frame);return
         if self.source_mode:
             if self._source_image is not None:self.video_widget.setPixmap(QPixmap.fromImage(self._source_image.scaled(self.video_widget.decode_size(),Qt.KeepAspectRatio,Qt.SmoothTransformation)))
         elif self.poses:self.request_solved(self.frame,immediate=not self.playing)
@@ -241,7 +245,7 @@ class Window(QMainWindow):
         if self.job or self.loader or self.mesh_panel.running or self.export_process:return
         if self.model_folder and (not self.video.text() or self.video.text()==getattr(self,'model_video',None)):
             self.show_shading();self.mesh_panel.start();return
-        if not Path(self.video.text()).is_file():
+        if not self.sequence.selected and not Path(self.video.text()).is_file():
             self.open_video()
             if not Path(self.video.text()).is_file():return
         if self.start_job():
@@ -268,13 +272,13 @@ class Window(QMainWindow):
         else:self.seek(self.frame)
         self.refresh_overlay()
     def source_frame(self,frame):
-        if not self.source_mode or not frame.isValid():return
+        if not self.source_mode or self.sequence.active or not frame.isValid():return
         self._pending_video_frame=QVideoFrame(frame)
         if not self._source_scheduled:
             self._source_scheduled=True;QTimer.singleShot(0,self.present_source_frame)
     def present_source_frame(self):
         self._source_scheduled=False;frame=self._pending_video_frame;self._pending_video_frame=None
-        if not self.source_mode or frame is None:return
+        if not self.source_mode or self.sequence.active or frame is None:return
         image=frame.toImage()
         if image.isNull():return
         timestamp=frame.startTime() if frame.startTime()>=0 else self.player.position()*1000
@@ -307,6 +311,7 @@ class Window(QMainWindow):
     def sample(self):
         folder=SAMPLE/'04 SCENES/IMG_2284_nonHDR/sparse'
         if folder.is_dir():
+            self.sequence.clear()
             self.video.setText(str(SAMPLE/'02 VIDEOS/IMG_2284_nonHDR.mov'))
             self.load_model(folder,folder.parent/'images',30000/1001)
     def choose_model(self):
@@ -316,7 +321,14 @@ class Window(QMainWindow):
         metadata=folder.parent/'settings.json'
         if metadata.is_file():
             try:
-                s=json.loads(metadata.read_text()); fps=float(s['fps']); self.video.setText(s['video'])
+                s=json.loads(metadata.read_text()); fps=float(s['fps'])
+                if s.get('sequence'):
+                    from image_sequence import validate_sequence
+                    from sequence_preview import first_size
+                    validate_sequence(s['sequence'],s['video'])
+                    if 'size' not in s['sequence']:s['sequence']['size']=first_size(s['video'],s['sequence'])
+                    self.sequence.configure(s['video'],s['sequence'])
+                else:self.sequence.clear();self.video.setText(s['video'])
             except (ValueError,KeyError):pass
         if (folder.parent/'undistorted/images').is_dir(): images=folder.parent/'undistorted/images'
         if not images.is_dir():
@@ -367,6 +379,7 @@ class Window(QMainWindow):
         if hasattr(self,'transport'):self.transport.ranges.pop('solved',None);self.transport.refresh()
         if hasattr(self,'history'):self.history.reset()
     def preview_source(self):
+        if self.sequence.selected:self.sequence.show();return
         if not Path(self.video.text()).is_file():self.status.setText('Select an existing video first.'); return
         self.pause(); self.source_mode=True; self.image_stack.setCurrentWidget(self.video_widget)
         self._pending_video_frame=None
@@ -381,15 +394,19 @@ class Window(QMainWindow):
         self.slider.setRange(self.poses[0]['frame'],self.poses[-1]['frame']); self.slider.setValue(self.poses[0]['frame']); self.seek(self.slider.value())
         self.transport.refresh()
     def duration_changed(self,duration):
+        if self.sequence.active:return
         if self.source_mode:self.slider.setRange(0,int(duration))
         if self.source_mode and duration>0 and hasattr(self,'pending_source_position'):
             position=self.pending_source_position;del self.pending_source_position;self.player.setPosition(min(position,duration))
     def position_changed(self,position):
+        if self.sequence.active:return
         if self.source_mode:
             self.slider.blockSignals(True); self.slider.setValue(position); self.slider.blockSignals(False)
             self.time_label.setText(f'{position/1000:.2f} / {self.player.duration()/1000:.2f} s')
             # The displayed frame timestamp updates the pose, not a separate media-clock event.
     def seek(self,value):
+        if self.sequence.active:
+            self.pause();self.sequence.request(value);return
         if self.source_mode:self.transport.pending_frame=None;self.player.setPosition(value); return
         if not self.poses:return
         if self.playing:
@@ -435,10 +452,12 @@ class Window(QMainWindow):
         if target!=self.frame:self.request_solved(target)
         self.schedule_solved()
     def pause(self):
+        if hasattr(self,'sequence'):self.sequence.stop()
         self.playing=False;self.preview_timer.stop();self.player.pause();self.play.setText('▶ Play')
         if not self.source_mode and self.poses and self._requested_frame is not None and self._requested_frame!=self.frame:
             self.request_solved(self._requested_frame,immediate=True)
     def toggle_play(self):
+        if self.sequence.active:self.sequence.toggle();return
         if self.source_mode:
             if self.player.playbackState()==QMediaPlayer.PlayingState:self.pause()
             else:
@@ -455,14 +474,16 @@ class Window(QMainWindow):
                 if not lo<=self.frame<hi:self.seek(lo)
                 self.playing=True;self.play_origin=time.perf_counter();self.play_frame=self.frame;self.play.setText('Ⅱ Pause');self.schedule_solved()
     def source_playback_changed(self,state):
+        if self.sequence.active:return
         if self.source_mode:self.play.setText('Ⅱ Pause' if state==QMediaPlayer.PlayingState else '▶ Play')
     def source_media_status(self,status):
         if status==QMediaPlayer.EndOfMedia:QTimer.singleShot(0,self.restart_source_loop)
     def restart_source_loop(self):
+        if self.sequence.active:return
         if self.source_mode and self.player.mediaStatus()==QMediaPlayer.EndOfMedia and self.transport.loop.isChecked():self.toggle_play()
     def set_busy(self,busy):
         if busy:self.camera_editor.cancel_drag()
-        for widget in (self.start,self.open_button,self.sample_button,self.import_button,self.settings,self.video,self.output,self.generate_mesh_button,self.camera_editor):widget.setEnabled(not busy)
+        for widget in (self.start,self.open_button,self.sequence_button,self.sample_button,self.import_button,self.settings,self.video,self.output,self.generate_mesh_button,self.camera_editor):widget.setEnabled(not busy)
         self.stop.setEnabled(self.job is not None or self.mesh_panel.running)
         if hasattr(self,'project'):
             for name,action in self.project.actions.items():
@@ -471,6 +492,7 @@ class Window(QMainWindow):
         if self.job or self.loader or self.mesh_panel.running:return False
         if not self.camera_editor.confirm_discard():return False
         settings=dict(CONFIG,video=self.video.text(),output=self.output.text(),fps=self.fps.value(),duration=self.seconds.value(),size=self.size.value(),overlap=self.overlap.value(),gpu=self.gpu.isChecked(),solver=self.solver.currentText(),mask=self.mask.text())
+        if self.sequence.selected:settings['sequence']=self.sequence.data
         try:self.job=Job(settings)
         except Exception as exc:self.status.setText(str(exc)); return False
         self.log_offset=0; self.console.clear(); self.set_busy(True)
@@ -521,7 +543,7 @@ class Window(QMainWindow):
             self.status.setText('Finish exporting before closing.'); event.ignore(); return
         if not self.project.confirm_discard():event.ignore();return
         self.mesh_panel.cancel();self.cancel_job();self.player.stop()
-        self.preview_timer.stop();self.frame_cache.close();self._pending_video_frame=None
+        self.preview_timer.stop();self.frame_cache.close();self.sequence.close();self._pending_video_frame=None
         self.transport.stop_indexer();self.project.recovery.close()
         self.image.renderer.close();self.video_widget.renderer.close();event.accept()
 

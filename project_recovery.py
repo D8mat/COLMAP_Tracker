@@ -65,7 +65,7 @@ def relink_document(window,path):
     data=project_document(path);replaced={};data['_relinked']=False
     for key,value in data['assets'].items():
         if not value:continue
-        folder=key in ('model','images')
+        folder=key in ('model','images','sequence','model_sequence')
         if (Path(value).is_dir() if folder else Path(value).is_file()):continue
         if value in replaced:data['assets'][key]=replaced[value];continue
         answer=QMessageBox.question(window,'Missing project asset',f'{key}:\n{value}\n\nLocate the moved file or folder?',QMessageBox.Yes|QMessageBox.Cancel,QMessageBox.Yes)

@@ -42,7 +42,12 @@ class Job:
         self.state = 'running'
         self.message = 'Preparing'
         video = Path(settings['video'])
-        if not video.is_file():
+        sequence=settings.get('sequence')
+        if sequence:
+            from image_sequence import validate_sequence,sampled_indices
+            validate_sequence(sequence,video)
+            sampled_indices(len(sequence['files']),sequence['fps'],settings['fps'],settings['duration'])
+        elif not video.is_file():
             raise ValueError('Select an existing video first.')
         for key in ('colmap', 'ffmpeg') + (('glomap',) if settings['solver'] == 'GLOMAP' else ()):
             if not Path(settings[key]).is_file():
@@ -61,6 +66,9 @@ class Job:
         if settings['duration'] > 0:
             extract += ['-t', str(settings['duration'])]
         extract += ['-vf', 'fps=' + str(settings['fps']), '-q:v', '2', str(self.folder / 'images/frame_%06d.jpg')]
+        if sequence:
+            import sys
+            extract=[sys.executable,str(ROOT/'image_sequence.py'),str(self.folder/'settings.json'),images]
         features = [c, 'feature_extractor', '--database_path', db, '--image_path', images,
                     '--ImageReader.single_camera', '1', '--ImageReader.camera_model', 'SIMPLE_RADIAL',
                     '--SiftExtraction.use_gpu', str(int(settings['gpu'])),
@@ -75,7 +83,7 @@ class Job:
                  '--SequentialMatching.overlap', str(settings['overlap'])]
         mapper = [settings['glomap'] if settings['solver'] == 'GLOMAP' else c, 'mapper',
                   '--database_path', db, '--image_path', images, '--output_path', str(self.folder / 'sparse')]
-        self.steps = [('1/6 Extract video frames', extract), ('2/6 Detect image features', features),
+        self.steps = [('1/6 Prepare sequence images' if sequence else '1/6 Extract video frames', extract), ('2/6 Detect image features', features),
                       ('3/6 Match neighbouring frames', match), ('4/6 Solve camera motion', mapper)]
 
     def tick(self):

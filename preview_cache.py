@@ -45,6 +45,10 @@ class FrameCache(QObject):
     @staticmethod
     def decode(path,size):
         if not path:return QImage()
+        if Path(path).suffix.lower()=='.exr':
+            from image_sequence import exr_png
+            from pipeline import CONFIG
+            return QImage.fromData(exr_png(path,CONFIG['ffmpeg'],size),'PNG')
         reader=QImageReader(path);target=reader.size()
         if target.isValid():
             if target.width()>size[0] or target.height()>size[1]:target.scale(QSize(*size),Qt.KeepAspectRatio)

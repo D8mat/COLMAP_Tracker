@@ -15,6 +15,7 @@ Points and Camera path toggles control visibility. Settings panel can scroll.
 
 NEW TRACKING
 Choose Open video, set COLMAP/GLOMAP, FPS, image size and GPU, then Start tracking.
+Or choose Open sequence, select a PNG/JPG/EXR/TIFF folder and enter its source FPS.
 First seconds = 0 processes the entire video; 8 is useful for a short test.
 A static mask uses black to exclude and white to retain pixels; dimensions
 must match the source frames. Moving video masks are not implemented.
@@ -23,9 +24,9 @@ Every run has a new project directory, settings.json and tracking.log.
 Failed runs are not marked complete. The largest disconnected model is loaded.
 
 PLAYBACK / IMPORT
-Source video plays the original clip, muted. Solved frames use the extracted
+Source plays the original video (muted) or image sequence. Solved frames use the extracted
 sequence at Tracking FPS. Unregistered frames display no solved camera.
-Tracking FPS resamples to an integer rate; it can differ from the source rate.
+Tracking FPS accepts fractional rates and can differ from the source rate.
 Import TXT model loads cameras.txt, images.txt and points3D.txt. Numbered frame
 names are required. Set Import FPS before loading an external reconstruction.
 Our project folders read FPS from settings.json. The prepared scene uses
@@ -34,6 +35,22 @@ Playback follows elapsed video time and skips overdue frames to avoid drift.
 Solved images are prefetched in the background; pausing/seeking shows the exact
 selected frame. The camera stays paired with the displayed image. Graph caching
 and GPU lens correction reduce preview work without changing the source media.
+
+IMAGE SEQUENCES
+File > Open image sequence (Ctrl+Alt+O), or Open sequence in the header.
+Select a folder and source FPS. PNG, JPG/JPEG, EXR and TIFF (.tif/.tiff) are supported, including
+uppercase extensions. Files sort naturally (2 before 10); only this folder is
+read. Filename gaps are consecutive playback frames. Use one sequence per folder.
+Space, frame stepping, loop, In/Out and speed also work with sequences.
+Tracking FPS must not exceed source FPS. Start tracking makes numbered working
+copies; EXR and TIFF are converted to PNG. Selected images must have matching dimensions.
+8-bit and 16-bit RGB TIFF are supported; PNG copies retain 16-bit precision.
+Each file is one frame; multipage TIFF uses only its first page.
+EXR preview/tracking uses linear RGB converted to 8-bit sRGB through FFmpeg.
+Original files stay untouched. Large EXRs can decode slower than realtime.
+This is RGB preview, with no HDR grading, layer selector or deep-EXR support.
+Save project stores the folder, ordered files and FPS; missing files are reported
+on reopening and moved folders can be relinked. Generate 3D mesh accepts sequences.
 
 EXPORT
 Export .blend runs Blender in the background without opening its interface.

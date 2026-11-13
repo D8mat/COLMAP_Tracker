@@ -1,12 +1,13 @@
 # COLMAP Tracker
 
-Experimental Windows desktop application for video camera tracking with COLMAP.
+Experimental Windows desktop application for video and image-sequence camera tracking with COLMAP.
 The application has its own PySide6 interface and embedded OpenGL viewport.
 Blender runs in the background only when exporting a `.blend` file.
 
 ## Features
 
 - Video preview, reconstructed image sequence and synchronized camera timeline.
+- Folder-based PNG, JPG/JPEG, EXR and TIFF input, source FPS, native playback and tracking.
 - Clock-based playback with background frame prefetch and GPU lens correction.
 - Colored sparse point cloud, camera trajectory and Z-up orbit navigation.
 - Clickable ±X/±Y/±Z orientation gizmo with orthographic views.
@@ -22,7 +23,7 @@ Blender runs in the background only when exporting a `.blend` file.
 - Windows, Python **3.10 or 3.11**, and an OpenGL 3.3-capable graphics driver.
 - COLMAP: this application has been tested with **3.12.3**. CLI option names may
   differ in other versions. Download from [COLMAP releases](https://github.com/colmap/colmap/releases).
-- FFmpeg for video-frame extraction.
+- FFmpeg for video-frame extraction and EXR decoding.
 - Optional GLOMAP executable for the global solver.
 - Optional Blender **5.2** for `.blend` export (the tested version).
 
@@ -52,7 +53,7 @@ the shared example. Setup preserves existing configuration.
 
 ## Workflow
 
-1. Choose **Open video**.
+1. Choose **Open video**, or **Open sequence** and select an image folder and its FPS.
 2. Set the solver, Tracking FPS, maximum image size and GPU use. Set **First
    seconds** to a short duration for testing, or `0` for the full clip.
 3. Click **Start tracking**. Each run gets its own project folder.
@@ -63,6 +64,37 @@ the shared example. Setup preserves existing configuration.
 **Stop** terminates the current subprocess and keeps partial output. Consult
 `tracking.log` for failures. A failed run is not marked complete. The viewer
 loads the largest disconnected reconstruction, rather than merging components.
+
+### Image sequences
+
+Use **File → Open image sequence…** (`Ctrl+Alt+O`) or **Open sequence** in the
+header. Choose a folder containing PNG, JPG/JPEG, EXR or TIFF (`.tif`/`.tiff`) files, then enter its
+source FPS (for example 24 or 29.97). All supported files directly in that folder
+are included, regardless of extension case; subfolders are ignored. Natural
+filename ordering places `frame_2` before `frame_10`. Gaps in filenames are played
+consecutively, starting at timeline frame 1. Keep one sequence in each folder.
+
+**Source** plays the original sequence with background prefetch. Frame stepping,
+Space play/pause/replay, In/Out, loop, playback speed, Fit/100% and image overlays
+use the same controls as video. Decoding is asynchronous; large EXRs may play
+below the requested FPS. The displayed camera follows the presented frame.
+
+**Tracking FPS** can sample fewer frames than the source rate, but cannot exceed
+sequence FPS. The pipeline makes numbered copies of selected PNG/JPG images and
+converts selected EXRs and TIFFs into PNGs in the new job folder. Dimensions must match.
+TIFF supports 8-bit and 16-bit RGB images; 16-bit precision is retained in the
+PNG working copies. Each file is one frame; a multipage TIFF uses its first page.
+EXR RGB uses a fixed linear-to-sRGB conversion for both preview and tracking;
+this is an 8-bit display/tracking representation, not an HDR grading workflow.
+No exposure adjustment, arbitrary EXR layer selection or deep EXR is provided.
+Original files are never modified. **Generate 3D mesh** also accepts this source.
+
+Projects save the sequence folder, FPS and exact ordered filename list. Reopening
+does not silently include newly added images. A missing image fails reopening
+without replacing the current project; a moved folder can be relinked. Older
+video-only projects remain supported. `validate_image_sequence.py` checks actual
+PNG/JPG/EXR/TIFF decoding, playback, project round trips, overlay association and the
+first tracking preparation stage; it does not assess reconstruction quality.
 
 ## Viewport and editing
 

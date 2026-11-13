@@ -29,8 +29,11 @@ class Transport(QObject):
     def rate(self):return float(self.speed.currentText().replace('×',''))
 
     def mode(self):return 'source' if self.w.source_mode else 'solved'
-    def current(self):return self.pending_frame or self.source_frame if self.w.source_mode else self.w.frame
+    def current(self):
+        if self.w.sequence.active:return self.w.sequence.requested
+        return self.pending_frame or self.source_frame if self.w.source_mode else self.w.frame
     def limits(self):
+        if self.w.sequence.active:return 1,len(self.w.sequence.data['files'])
         if self.w.source_mode:return 1,max(1,len(self.stamps))
         return (self.w.poses[0]['frame'],self.w.poses[-1]['frame']) if self.w.poses else (1,1)
     def bounds(self):
@@ -39,12 +42,13 @@ class Transport(QObject):
     def refresh(self):
         a,b=self.limits();self.number.blockSignals(True);self.number.setRange(a,b);self.number.setValue(max(a,min(b,self.current())));self.number.blockSignals(False)
         lo,hi=self.bounds();self.label.setText(f'{lo}–{hi}')
-        ready=bool(self.stamps if self.w.source_mode else self.w.poses)
+        ready=self.w.sequence.active or bool(self.stamps if self.w.source_mode else self.w.poses)
         for widget in (self.first,self.prev,self.next,self.last,self.number,self.in_button,self.out_button):widget.setEnabled(ready)
 
     def go(self,frame):
         w=self.w;w.pause();a,b=self.limits();frame=max(a,min(b,int(frame)))
-        if w.source_mode:
+        if w.sequence.active:w.sequence.request(frame)
+        elif w.source_mode:
             if not self.stamps:return
             self.pending_frame=frame;w._pending_video_frame=None
             ts=self.stamps[frame-1];gap=self.stamps[frame]-ts if frame<len(self.stamps) else .03
@@ -59,6 +63,7 @@ class Transport(QObject):
     def clear_range(self):self.ranges.pop(self.mode(),None);self.refresh()
     def speed_changed(self):
         w=self.w
+        w.sequence.speed_changed()
         if w.playing:w.play_origin=time.perf_counter();w.play_frame=w.frame
         w.player.setPlaybackRate(self.rate)
 

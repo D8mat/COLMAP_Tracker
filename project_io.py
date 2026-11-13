@@ -25,6 +25,13 @@ def validate_document(data):
     if data.get('format')!='colmap-tracker-project' or data.get('version')!=1:raise ValueError('Unsupported tracker project format.')
     for key in ('video','model_video','model','images','mesh'):
         if not isinstance(data['assets'][key],str):raise ValueError('Invalid project asset path.')
+    for key in ('sequence','model_sequence'):
+        if key in data['assets'] and not isinstance(data['assets'][key],str):raise ValueError('Invalid sequence folder.')
+    if data.get('sequence') is not None:
+        from image_sequence import validate_sequence
+        validate_sequence(data['sequence'])
+        if not data['assets'].get('sequence') or data['assets']['video']:raise ValueError('Sequence projects require one source folder.')
+    elif data['assets'].get('sequence') or data['assets'].get('model_sequence'):raise ValueError('Missing sequence information.')
     if not .1<=data['model_fps']<=240:raise ValueError('Invalid project FPS.')
     validate_layout(data['layout'])
     for section in ('tracking','view','meshing','orbit'):
@@ -73,6 +80,10 @@ def read_project(path,data=None):
     data=project_document(path) if data is None else copy.deepcopy(data);validate_document(data);assets=data['assets']
     for key in ('video','model_video','mesh'):
         if assets[key] and not Path(assets[key]).is_file():raise ValueError(f'Missing {key}: {assets[key]}')
+    if data.get('sequence'):
+        from image_sequence import validate_sequence
+        validate_sequence(data['sequence'],assets['sequence'])
+        if assets.get('model_sequence') and not Path(assets['model_sequence']).is_dir():raise ValueError('Missing model sequence folder.')
     if assets['images'] and not Path(assets['images']).is_dir():raise ValueError('Missing frame images folder: '+assets['images'])
     model=read_model(assets['model']) if assets['model'] else None
     if model:

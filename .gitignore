@@ -22,6 +22,9 @@
 *.png
 *.jpg
 *.jpeg
+*.exr
+*.tif
+*.tiff
 *.db
 *.db-*
 *.bin

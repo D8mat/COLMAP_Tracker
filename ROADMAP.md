@@ -10,6 +10,13 @@ konkrétne body a prepočítať výsledok. Prioritou má byť spoľahlivý cyklu
 
 ## Hotové v tejto úprave
 
+[Certain] Vstup obrazovej sekvencie: priečinok PNG/JPG/JPEG/EXR/TIFF, prirodzené
+zoradenie, voľba zdrojového FPS, asynchrónny náhľad a existujúce ovládanie prehrávania.
+Projekt uchová presné poradie snímok; tracking vytvorí pracovné kópie a EXR/TIFF prevedie
+do PNG. TIFF podporuje .tif aj .tiff; overené sú 8/16-bitové RGB snímky a zachovanie
+16-bitovej presnosti pracovných kópií. Overené sú formáty, prehrávanie, znovuotvorenie, overlay aj príprava snímok
+pre COLMAP. HDR grading a výber EXR vrstiev nie sú súčasťou. Čaká na používateľský test.
+
 [Certain] P0 je implementované a integračne overené; používateľ 13. 11. 2026
 povolil pokračovanie do P1. Zahŕňa zoznam objektov, Show/Lock, premenovanie/duplikáciu/mazanie,
 Frame selected, spoločné Undo/Redo, krokovanie, In/Out/loop/rýchlosť,
