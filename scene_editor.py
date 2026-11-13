@@ -20,7 +20,7 @@ class SceneEditor(QWidget):
         spin.valueChanged.connect(lambda value:self.set_value('scale',None,value));self.fields['scale',None]=spin;form.addRow('Scale',spin);layout.addLayout(form)
         self.button('Reset transform',self.reset,layout);self.button('Remove selected object',self.remove,layout)
         row=QHBoxLayout();self.button('+ Cube',lambda:view.add_primitive('Cube'),row);self.button('+ Cone ↓',lambda:view.add_primitive('Cone'),row);layout.addLayout(row)
-        layout.addWidget(QLabel('Cone origin = downward tip.\nClick objects in 3D to select. G: Move, R: Rotate.\nDrag an arrow or rotation ring. Esc cancels.'))
+        layout.addWidget(QLabel('Cone origin = downward tip.\nE: Move · R: Rotate · T: Uniform scale.\nDrag an arrow, ring or scale square. Esc cancels.'))
         self.button('Save scene layout…',self.save,layout);self.button('Load scene layout…',self.load,layout);layout.addStretch()
         view.edited.connect(self.refresh);self.refresh()
     def button(self,text,callback,layout):

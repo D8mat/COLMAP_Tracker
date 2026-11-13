@@ -69,8 +69,9 @@ loads the largest disconnected reconstruction, rather than merging components.
 | Action | Control |
 | --- | --- |
 | Select primitive | Click its surface in the 3D viewport |
-| Move | `G` or **Move**, then drag an axis arrow |
+| Move | `E` (`G` also works) or **Move**, then drag an axis arrow |
 | Rotate | `R` or **Rotate**, then drag a rotation ring |
+| Uniform scale | `T` or **Scale**, then drag the square outward/inward |
 | Cancel current transform | `Esc` while dragging |
 | Change transform axes | **Scene & objects → Gizmo axes → Global/Local** |
 | Select whole scene | Click empty space, or choose **Whole scene** in the panel |
@@ -79,7 +80,9 @@ loads the largest disconnected reconstruction, rather than merging components.
 | Axis-aligned view | Click the corner orientation gizmo |
 | Reset view | **Fit scene** |
 
-Keyboard shortcuts apply while the viewport has focus. The cone's downward tip
+Transform shortcuts work across the window except in text/numeric inputs,
+combo boxes and dialogs, and during floor picking or an active drag. Scale is
+uniform across XYZ, keeping the selected origin fixed. The cone's downward tip
 is its local origin. Whole-scene transforms include the camera, trajectory,
 points and added objects. As a result, these transforms preserve image alignment;
 move an individual object to change its placement in the overlay.
@@ -147,6 +150,8 @@ Press **Space** to play/pause either source video or solved-frame playback,
 including while the 3D viewport or timeline has focus. Text/numeric inputs,
 combo boxes and dialogs keep their usual keyboard behavior. Holding Space
 does not repeatedly toggle playback.
+At the end, pressing **Space** or **Play** starts again from the beginning in
+both modes. Pausing in the middle and playing again resumes at that position.
 
 Playback follows elapsed video time, skipping overdue frames instead of building
 up delay. Solved images decode on a background thread with a bounded 96 MiB cache
@@ -279,6 +284,9 @@ XYZ gizmo drags/rotations, cancellation, and Blender export preserving scene-roo
 transforms and cone-tip origins. Fresh-install setup is separate from those tests.
 
 ## Source layout
+
+See [ROADMAP.md](ROADMAP.md) for the feature audit, comparison with other tracking
+tools, priorities and acceptance criteria for planned work.
 
 - `desktop.py`: application UI, video and processing controls.
 - `preview_cache.py`: background solved-frame decoding and bounded prefetch cache.

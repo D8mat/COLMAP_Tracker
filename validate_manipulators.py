@@ -63,7 +63,17 @@ def check():
             drag(a,b);matrix=transform_matrix(cube)[:3,:3]/cube['scale']
             assert np.allclose(matrix@np.eye(3)[:,index],np.eye(3)[:,index],atol=1e-5)
             assert abs(np.trace(matrix)-1)<.08
-        print('PASS object clicks, XYZ arrow drags, Esc rollback, Z-ring rotation, transformed-parent picking/move, local axes and cone tip pivot',flush=True)
+        # Uniform scaling preserves the object's origin and works for the complete scene.
+        for key,mode in ((Qt.Key_E,'Move'),(Qt.Key_R,'Rotate'),(Qt.Key_T,'Scale')):
+            QTest.keyClick(v,key);assert v.mode==mode
+        for selection in (0,-1):
+            v.selected=selection;v.set_mode('Scale');repaint();item=v.active_transform();before=copy.deepcopy(item)
+            h=v.handles[0];a=h['b'];direction=h['b']-h['a'];direction/=np.linalg.norm(direction)
+            drag(a,a+direction*40)
+            assert item['scale']>before['scale'] and item['position']==before['position'] and item['rotation']==before['rotation']
+            h=v.handles[0];a=h['b'];before=copy.deepcopy(item);drag(a,a-direction*30,cancel=True);assert item==before
+            repaint();h=v.handles[0];a=h['b'];drag(a,a-direction*40);assert item['scale']<before['scale']
+        print('PASS object clicks, XYZ moves/rotations, Esc rollback, parent transforms, E/R/T and uniform object/scene scale with fixed pivots',flush=True)
         v.close();app.exit(0)
     except Exception:
         import traceback;traceback.print_exc();v.close();app.exit(1)

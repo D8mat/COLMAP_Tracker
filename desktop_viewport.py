@@ -14,6 +14,7 @@ from camera_track import WORLD,camera_matrix
 from mesh_data import triangle_buffer
 from overlay_renderer import primitive_mesh
 
+TRANSFORM_KEYS={Qt.Key_E:'Move',Qt.Key_G:'Move',Qt.Key_R:'Rotate',Qt.Key_T:'Scale'}
 
 class AxisGizmo(QWidget):
     def __init__(self,view):
@@ -49,7 +50,7 @@ class ManipulatorOverlay(QWidget):
         v=self.view;painter=QPainter(self);painter.setPen(QColor('#a8bacf'))
         painter.drawText(16,26,'3D SCENE   /   Z UP')
         target='whole scene' if v.selected<0 else v.objects[v.selected]['name']
-        action='Click floor points · Drag to orbit' if v.floor_pick else ('Click: select · Drag background: orbit' if v.mode=='Orbit' else v.mode+' '+target+' · Drag an axis handle')
+        action='Click floor points · Drag to orbit' if v.floor_pick else ('Click: select · Drag background: orbit' if v.mode=='Orbit' else v.mode+' '+target+(' · Drag square: uniform scale' if v.mode=='Scale' else ' · Drag an axis handle'))
         painter.drawText(16,self.height()-16,action+' · Esc: cancel')
         v.draw_manipulator(painter)
         root=transform_matrix(v.scene_transform)
@@ -151,7 +152,7 @@ class Viewport(QOpenGLWidget):
     def draw_manipulator(self,painter):
         self.handles=[]
         if self.floor_pick:return
-        if self.mode not in ('Move','Rotate') or self.view_projection is None:return
+        if self.mode not in ('Move','Rotate','Scale') or self.view_projection is None:return
         pivot,basis=self.manipulator_frame();screen=self.project(pivot)
         if screen is None:return
         # Match a fixed screen size in perspective and orthographic views, in logical pixels.
@@ -160,6 +161,17 @@ class Viewport(QOpenGLWidget):
             v=inv@np.array([2*x/self.width()-1,1-2*screen[1]/self.height(),screen[2],1]);return v[:3]/v[3]
         length=max(1e-5,np.linalg.norm(unproject(screen[0]+85)-unproject(screen[0])))
         painter.setRenderHint(QPainter.Antialiasing)
+        if self.mode=='Scale':
+            # The scene format stores a uniform scale; a single square makes this explicit.
+            a=screen[:2];direction=np.array([1.,-1.])/math.sqrt(2);b=a+direction*85
+            active=self.hover_axis==3 or self.drag is not None
+            painter.setPen(QPen(QColor('#ffe392' if active else '#dbe4ef'),3))
+            painter.setBrush(QColor('#ffe392' if active else '#8fa9c8'))
+            painter.drawLine(QPointF(*a),QPointF(*b));painter.drawRect(QRectF(b[0]-6,b[1]-6,12,12))
+            painter.drawText(QPointF(b[0]+10,b[1]+4),'Uniform')
+            painter.drawEllipse(QPointF(*a),5,5)
+            self.handles.append(dict(axis_index=3,axis=basis[:,0].copy(),pivot=pivot.copy(),a=a+direction*13,b=b,length=length))
+            return
         for index,color in enumerate(['#f06470','#73dc8c','#72adff']):
             axis=basis[:,index];active=self.hover_axis==index or (self.drag and self.drag['axis_index']==index)
             painter.setPen(QPen(QColor('#ffe392') if active else QColor(color),4 if active else 3))
@@ -204,6 +216,11 @@ class Viewport(QOpenGLWidget):
             delta=axis*(parameter-d['parameter'])
             if d['selected']>=0:delta=np.linalg.solve(d['parent'][:3,:3],delta)
             item['position']=(np.array(before['position'])+delta).tolist()
+        elif d['mode']=='Scale':
+            direction=d['b']-d['a'];direction/=np.linalg.norm(direction)
+            delta=np.array([point.x(),point.y()])-d['start']
+            factor=math.exp(float(np.clip(delta@direction/100.,-20,20)))
+            item['scale']=float(np.clip(before['scale']*factor,.0001,1e6))
         else:
             vector=plane_vector(origin,direction,d['pivot'],axis)
             if vector is not None and d['vector'] is not None:
@@ -404,8 +421,8 @@ in vec3 rgb; out vec4 frag; void main(){frag=vec4(rgb,1);}'''
         if self.floor_pick and event.key()==Qt.Key_Escape:self.floor_pick_cancelled.emit();return
         if event.key()==Qt.Key_Escape and self.drag:
             self.drag['item'].update(self.drag['before']);self.drag=None;self.cancelled_drag=True;self.unsetCursor();self.edited.emit();self.update();return
-        if not self.drag and event.key() in (Qt.Key_G,Qt.Key_R):
-            mode='Move' if event.key()==Qt.Key_G else 'Rotate';self.set_mode(mode);self.mode_changed.emit(mode);return
+        if not self.drag and not self.floor_pick and event.modifiers()==Qt.NoModifier and event.key() in TRANSFORM_KEYS:
+            mode=TRANSFORM_KEYS[event.key()];self.set_mode(mode);self.mode_changed.emit(mode);return
         super().keyPressEvent(event)
     def wheelEvent(self,event):
         if self.drag:return

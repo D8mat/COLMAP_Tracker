@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBo
 from PySide6.QtMultimedia import QMediaPlayer,QAudioOutput,QVideoSink,QVideoFrame
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import QStackedWidget
-from desktop_viewport import Viewport
+from desktop_viewport import Viewport,TRANSFORM_KEYS
 from image_overlay import OverlayImage
 from scene_editor import SceneEditor
 from camera_editor import CameraEditor
@@ -120,7 +120,7 @@ class Window(QMainWindow):
         self.points_toggle=QCheckBox('Points'); self.points_toggle.setChecked(True); options.addWidget(self.points_toggle)
         self.path_toggle=QCheckBox('Camera path'); self.path_toggle.setChecked(True); options.addWidget(self.path_toggle)
         options.addStretch(); options.addWidget(QLabel('Z ↑')); scene_layout.addLayout(options)
-        self.edit_mode=QComboBox();self.edit_mode.addItems(['Orbit','Move','Rotate']);self.edit_mode.currentTextChanged.connect(self.viewport.set_mode);self.viewport.mode_changed.connect(self.edit_mode.setCurrentText);options.addWidget(self.edit_mode)
+        self.edit_mode=QComboBox();self.edit_mode.addItems(['Orbit','Move','Rotate','Scale']);self.edit_mode.setToolTip('E: Move · R: Rotate · T: Uniform scale');self.edit_mode.currentTextChanged.connect(self.viewport.set_mode);self.viewport.mode_changed.connect(self.edit_mode.setCurrentText);options.addWidget(self.edit_mode)
         scene_layout.addWidget(self.viewport,1); views.addWidget(scene_panel)
         self.editor=SceneEditor(self.viewport);self.editor_dock=QDockWidget('Scene & objects',self);editor_scroll=QScrollArea();editor_scroll.setWidgetResizable(True);editor_scroll.setWidget(self.editor);self.editor_dock.setWidget(editor_scroll);self.addDockWidget(Qt.RightDockWidgetArea,self.editor_dock);self.editor_dock.hide()
         self.points_toggle.toggled.connect(self.toggle_points); self.path_toggle.toggled.connect(self.toggle_path)
@@ -143,6 +143,7 @@ class Window(QMainWindow):
         self.player=QMediaPlayer(self); self.audio=QAudioOutput(self); self.audio.setVolume(0); self.player.setAudioOutput(self.audio)
         self.video_sink=QVideoSink(self);self.player.setVideoSink(self.video_sink);self.video_sink.videoFrameChanged.connect(self.source_frame)
         self.player.durationChanged.connect(self.duration_changed); self.player.positionChanged.connect(self.position_changed)
+        self.player.playbackStateChanged.connect(self.source_playback_changed)
         self.player.errorOccurred.connect(lambda *_:self.status.setText(self.player.errorString()))
         self.timer=QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(30)
         self.setStyleSheet('''QWidget{background:#191e27;color:#dbe4ef;font:10pt "Segoe UI";} QMainWindow{background:#11151c;}
@@ -156,7 +157,7 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
 
     def eventFilter(self,receiver,event):
         if (event.type() in (QEvent.ShortcutOverride,QEvent.KeyPress,QEvent.KeyRelease)
-                and event.key()==Qt.Key_Space and event.modifiers()==Qt.NoModifier
+                and event.key() in (Qt.Key_Space,*TRANSFORM_KEYS) and event.modifiers()==Qt.NoModifier
                 and isinstance(receiver,QWidget) and (receiver is self or self.isAncestorOf(receiver))
                 and QApplication.activeModalWidget() is None and QApplication.activePopupWidget() is None):
             focus=QApplication.focusWidget()
@@ -164,7 +165,9 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
                 isinstance(focus,(QPlainTextEdit,QTextEdit)) and not focus.isReadOnly())
             if not editing:
                 if event.type()==QEvent.KeyPress and not event.isAutoRepeat() and self.viewport.drag is None:
-                    self.toggle_play()
+                    if event.key()==Qt.Key_Space:self.toggle_play()
+                    elif not self.viewport.floor_pick:
+                        mode=TRANSFORM_KEYS[event.key()];self.viewport.set_mode(mode);self.viewport.mode_changed.emit(mode)
                 event.accept();return True
         return super().eventFilter(receiver,event)
 
@@ -349,11 +352,17 @@ QGroupBox::title{subcontrol-origin:margin;left:10px;} QLabel#stats{background:#2
     def toggle_play(self):
         if self.source_mode:
             if self.player.playbackState()==QMediaPlayer.PlayingState:self.pause()
-            else:self.player.play(); self.play.setText('Ⅱ Pause')
+            else:
+                if self.player.mediaStatus()==QMediaPlayer.EndOfMedia or (self.player.duration()>0 and self.player.position()>=self.player.duration()):
+                    self._pending_video_frame=None;self.player.setPosition(0)
+                self.player.play()
         elif self.poses:
             if self.playing:self.pause()
             else:
+                if self.frame>=self.slider.maximum():self.seek(self.slider.minimum())
                 self.playing=True;self.play_origin=time.perf_counter();self.play_frame=self.frame;self.play.setText('Ⅱ Pause');self.schedule_solved()
+    def source_playback_changed(self,state):
+        if self.source_mode:self.play.setText('Ⅱ Pause' if state==QMediaPlayer.PlayingState else '▶ Play')
     def set_busy(self,busy):
         for widget in (self.start,self.open_button,self.sample_button,self.import_button,self.settings,self.video,self.output,self.generate_mesh_button):widget.setEnabled(not busy)
         self.stop.setEnabled(self.job is not None or self.mesh_panel.running)

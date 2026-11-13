@@ -88,8 +88,11 @@ DIRECT SELECTION AND TRANSFORM GIZMOS
 Click a cube or cone in the 3D viewport to select the nearest object surface.
 Selection is synchronized with the Scene & objects panel and shows a gizmo
 at the actual origin (the tip for cones). New objects start in Move mode.
-G / Move: drag a colored X, Y or Z arrow to translate along that axis only.
+E / Move (G also works): drag a colored X, Y or Z arrow to translate along that axis only.
 R / Rotate: drag a colored ring to rotate around that axis and object origin.
+T / Scale: drag the square outward/inward to scale uniformly around the origin.
+E/R/T work across the window, except when editing text/numbers, choosing a combo
+value, using a dialog, picking floor points, or already dragging a gizmo.
 Global uses world axes; Local uses the object's rotated axes. Select this in
 Scene & objects > Gizmo axes. Parent scene rotation and scale are respected.
 Escape during a drag restores the transform and preserves selection.
@@ -101,6 +104,7 @@ CAMERA KEYFRAME GRAPH
 Space toggles playback in Source video and Solved frames. It also works when
 the 3D viewport or timeline has focus. Text/numeric inputs keep normal typing;
 holding Space does not repeatedly toggle playback.
+When playback reaches the end, Space or Play restarts from the beginning.
 Below the timeline, enable Keyframe graph. Choose Position XYZ, Translation
 jump (units/frame), or Rotation jump (degrees/frame). Dashed = original solve;
 solid = current result; amber marks = corrected frames. Click a frame to select
