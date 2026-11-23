@@ -23,4 +23,12 @@ for canvas in canvases:
             assert window.size()==original,(window.size(),original)
             assert stack.size()==canvas_size,(stack.size(),canvas_size)
             assert canvas.minimumSizeHint()==QSize(0,0)
-window.close();print('PASS stable window/stack dimensions across 4K/8K, portrait, DPR 1/2, source/solved and Fit/100%')
+canvas=canvases[-1];canvas.set_native_size(QSize(3840,2160));canvas.preview_limit=720;canvas.actual_size()
+assert max(canvas.decode_size().width(),canvas.decode_size().height())<=720
+canvas.preview_limit=0;assert canvas.decode_size().width()==3840
+import numpy as np
+canvas.viewport=SimpleNamespace(pose=np.eye(4),objects=[],points=np.empty((0,6)),mesh=None)
+canvas.camera=('PINHOLE',3840,2160,[3000,3000,1920,1080])
+def unexpected(*args,**kwargs):raise AssertionError('Empty overlay invoked GPU rendering')
+canvas.renderer.render=unexpected;canvas.grab();assert canvas.overlay_error==''
+window.close();print('PASS stable preview layout, quality cap, full-resolution inspection and empty-overlay bypass')

@@ -36,3 +36,14 @@ Tests:
 
 Windows project paths need relinking when opening projects on Mac. Keep source
 media and reconstruction folders together when transferring them.
+
+## Preview performance
+
+The preview toolbar offers Full / 1080 / 720 / 480 (maximum image edge in pixels).
+macOS defaults to 720 to limit Retina scaling and GPU overlay readback cost.
+Try 480 for complex scenes; choose Full for full-resolution 100% inspection.
+These are session display settings only: source media, tracking, and export are
+unchanged. Empty object overlays bypass GPU rendering. Image-sequence thumbnails
+are resized in the decoder worker even when a TIFF/PNG plugin ignores scaled reads.
+Source video is still decoded by Qt at source resolution; this is not a proxy-video
+implementation. Improvements in frame rate must be measured on the target Mac.

@@ -131,6 +131,10 @@ class Window(QMainWindow):
         self.loupe_toggle=QCheckBox('Loupe');self.loupe_toggle.toggled.connect(self.image_options);inspect.addWidget(self.loupe_toggle)
         self.hide_overlay_toggle=QCheckBox('Hide overlays');self.hide_overlay_toggle.toggled.connect(self.image_options);inspect.addWidget(self.hide_overlay_toggle);image_layout.addLayout(inspect)
         self.image.view_changed.connect(self.refresh_image_view);self.video_widget.view_changed.connect(self.refresh_image_view)
+        self.preview_quality=QComboBox();self.preview_quality.addItems(['Preview: Full','Preview: 1080','Preview: 720','Preview: 480'])
+        self.preview_quality.setToolTip('Display resolution only. Lower settings reduce Retina and 3D overlay cost; tracking and export keep their original quality. Full restores pixel inspection.')
+        inspect.addWidget(self.preview_quality);self.preview_quality.currentIndexChanged.connect(self.set_preview_quality)
+        if sys.platform=='darwin':self.preview_quality.setCurrentIndex(2)
         self.overlay_toggle.toggled.connect(self.refresh_overlay);self.overlay_alpha.valueChanged.connect(self.refresh_overlay);self.viewport.edited.connect(self.refresh_overlay)
         self.floor_toggle.toggled.connect(self.refresh_overlay);self.floor_spacing.valueChanged.connect(self.refresh_overlay);self.floor_height.valueChanged.connect(self.refresh_overlay);self.refresh_overlay()
         self.cloud_toggle.toggled.connect(self.refresh_overlay);self.mesh_toggle.toggled.connect(self.refresh_overlay)
@@ -215,6 +219,12 @@ class Window(QMainWindow):
         QMessageBox.information(self,'Controls','Space: Play / pause / replay\nLeft / Right: previous / next frame\nHome / End: first / last frame\nI / O: playback In / Out\nE / R / T: move / rotate / uniform scale\nDelete: remove object · Ctrl+D: duplicate\nF: frame selected · F2: rename\nCtrl+Z / Ctrl+Shift+Z: Undo / Redo\nImage wheel: zoom · Middle/right drag: pan\nEsc: cancel gizmo drag\nText fields keep their normal keyboard controls.')
 
     def active_image(self):return self.video_widget if self.source_mode else self.image
+    def set_preview_quality(self,index):
+        limit=(0,1080,720,480)[index]
+        for widget in (self.image,self.video_widget):
+            widget.preview_limit=limit;widget.overlay_limit=1600 if not limit else min(limit,720)
+            widget.renderer.cache_key=None;widget.update()
+        self.refresh_image_view()
     def image_options(self):
         for widget in (self.image,self.video_widget):widget.loupe=self.loupe_toggle.isChecked();widget.hide_overlays=self.hide_overlay_toggle.isChecked();widget.update()
         self.refresh_image_view()

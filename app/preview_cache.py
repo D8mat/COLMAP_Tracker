@@ -53,7 +53,13 @@ class FrameCache(QObject):
         if target.isValid():
             if target.width()>size[0] or target.height()>size[1]:target.scale(QSize(*size),Qt.KeepAspectRatio)
             reader.setScaledSize(target)
-        return reader.read()
+        image=reader.read()
+        # Some TIFF/PNG readers ignore scaled decoding. Resize in this worker,
+        # not in the UI, and cache a display image rather than a 16-bit full frame.
+        if not image.isNull():
+            if image.width()>size[0] or image.height()>size[1]:image=image.scaled(QSize(*size),Qt.KeepAspectRatio,Qt.SmoothTransformation)
+            image=image.convertToFormat(QImage.Format_ARGB32_Premultiplied if image.hasAlphaChannel() else QImage.Format_RGB32)
+        return image
 
     def store_locked(self,frame,image):
         if frame in self.cache:self.bytes-=self.cache.pop(frame).sizeInBytes()

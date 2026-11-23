@@ -19,7 +19,7 @@ class OverlayImage(QLabel):
         self.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Ignored)
         self.enabled_grid=False;self.enabled_points=False;self.enabled_mesh=False
         self.cloud_size=3.;self.cloud_color='RGB';self.renderer=CalibratedRenderer();self.overlay_error=''
-        self.reprojection=ReprojectionOverlay()
+        self.reprojection=ReprojectionOverlay();self.preview_limit=0;self.overlay_limit=1600
         self.native_size=QSize();self.zoom=None;self.pan=QPointF();self.pan_start=None;self.loupe=False;self.hide_overlays=False;self.cursor_point=None
         self.setMouseTracking(True);self.setToolTip('Wheel: zoom at cursor · Middle/right drag: pan · Fit / 100% in toolbar')
 
@@ -42,7 +42,10 @@ class OverlayImage(QLabel):
     def decode_size(self):
         if not self.native_size.isValid():return self.size()
         scale=max(self.scale_factor()*self.devicePixelRatioF(),1. if self.loupe else 0.)
-        return self.native_size*min(1.,scale)
+        result=self.native_size*min(1.,scale)
+        if self.preview_limit and max(result.width(),result.height())>self.preview_limit:
+            result=result.scaled(QSize(self.preview_limit,self.preview_limit),Qt.KeepAspectRatio)
+        return result
 
     def fit_image(self):
         self.zoom=None;self.pan=QPointF();self.view_changed.emit();self.update()
@@ -79,12 +82,16 @@ class OverlayImage(QLabel):
         rect=self.image_rect();overlay=None;grid=None
         if not self.hide_overlays:self.reprojection.prepare(self.camera,self.viewport.pose,rect)
         if not self.hide_overlays and self.camera is not None and self.viewport.pose is not None:
-            if self.enabled_overlay or self.enabled_points or self.enabled_mesh:
+            draw_objects=self.enabled_overlay and any(o.get('visible',True) for o in self.viewport.objects)
+            draw_points=self.enabled_points and len(self.viewport.points)>0
+            draw_mesh=self.enabled_mesh and self.viewport.mesh is not None
+            if draw_objects or draw_points or draw_mesh:
                 try:
                     # Bound the distortion-map allocation when inspecting a full-resolution image.
-                    render_size=pix.size().scaled(QSize(1600,1600),Qt.KeepAspectRatio) if max(pix.width(),pix.height())>1600 else pix.size()
-                    overlay=self.renderer.render(self.viewport,self.camera,render_size,points=self.enabled_points,mesh=self.enabled_mesh,objects=self.enabled_overlay,point_size=self.cloud_size,point_color=self.cloud_color);self.overlay_error=''
+                    render_size=pix.size().scaled(QSize(self.overlay_limit,self.overlay_limit),Qt.KeepAspectRatio) if max(pix.width(),pix.height())>self.overlay_limit else pix.size()
+                    overlay=self.renderer.render(self.viewport,self.camera,render_size,points=draw_points,mesh=draw_mesh,objects=draw_objects,point_size=self.cloud_size,point_color=self.cloud_color);self.overlay_error=''
                 except Exception as exc:self.overlay_error=str(exc)
+            else:self.overlay_error=''
             if self.enabled_grid:grid=project_floor(transform_matrix(self.viewport.scene_transform)@self.viewport.pose,self.camera,self.viewport.floor_spacing,self.viewport.floor_height)
         def draw_content():
             painter.save();painter.setClipRect(rect,Qt.IntersectClip);painter.setRenderHint(QPainter.SmoothPixmapTransform)
