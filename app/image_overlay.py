@@ -2,7 +2,7 @@
 import math
 from PySide6.QtCore import Qt,QPointF,QRectF,QSize,Signal
 from PySide6.QtGui import QPainter,QColor,QPen
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLabel,QSizePolicy
 from scene_geometry import transform_matrix
 from floor_grid import project_floor
 from overlay_renderer import CalibratedRenderer
@@ -13,6 +13,10 @@ class OverlayImage(QLabel):
     view_changed=Signal()
     def __init__(self,text,viewport):
         super().__init__(text);self.viewport=viewport;self.camera=None;self.enabled_overlay=True;self.opacity=.65
+        # QLabel normally advertises the current pixmap's dimensions to layouts.
+        # On Retina this feeds decoded pixel sizes back into window sizing.
+        # This canvas scales/clips its own content; media must never size the window.
+        self.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Ignored)
         self.enabled_grid=False;self.enabled_points=False;self.enabled_mesh=False
         self.cloud_size=3.;self.cloud_color='RGB';self.renderer=CalibratedRenderer();self.overlay_error=''
         self.reprojection=ReprojectionOverlay()
@@ -20,6 +24,10 @@ class OverlayImage(QLabel):
         self.setMouseTracking(True);self.setToolTip('Wheel: zoom at cursor · Middle/right drag: pan · Fit / 100% in toolbar')
 
     def set_native_size(self,size):self.native_size=QSize(size)
+
+    def sizeHint(self):return QSize(320,240)
+
+    def minimumSizeHint(self):return QSize(0,0)
 
     def scale_factor(self):
         size=self.native_size
