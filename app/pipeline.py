@@ -54,6 +54,8 @@ class Job:
         for key in ('colmap', 'ffmpeg') + (('glomap',) if settings['solver'] == 'GLOMAP' else ()):
             if not Path(settings[key]).is_file():
                 raise ValueError('Executable not found: ' + settings[key])
+        from colmap_compat import feature_options
+        extraction_gpu,extraction_size,matching_gpu=feature_options(settings['colmap'])
         self.folder = Path(settings['output']) / (datetime.now().strftime('%Y%m%d_%H%M%S_') + uuid.uuid4().hex[:6])
         self.folder.mkdir(parents=True, exist_ok=False)
         for directory in ('images', 'sparse', 'model'):
@@ -73,15 +75,15 @@ class Job:
             extract=[sys.executable,str(ROOT/'app/image_sequence.py'),str(self.folder/'settings.json'),images]
         features = [c, 'feature_extractor', '--database_path', db, '--image_path', images,
                     '--ImageReader.single_camera', '1', '--ImageReader.camera_model', 'SIMPLE_RADIAL',
-                    '--SiftExtraction.use_gpu', str(int(settings['gpu'])),
-                    '--SiftExtraction.max_image_size', str(settings['size'])]
+                    extraction_gpu, str(int(settings['gpu'])),
+                    extraction_size, str(settings['size'])]
         if settings.get('mask'):
             if not Path(settings['mask']).is_file():
                 self.log.close()
                 raise ValueError('Camera mask does not exist.')
             features += ['--ImageReader.camera_mask_path', settings['mask']]
         match = [c, 'sequential_matcher', '--database_path', db,
-                 '--SiftMatching.use_gpu', str(int(settings['gpu'])),
+                 matching_gpu, str(int(settings['gpu'])),
                  '--SequentialMatching.overlap', str(settings['overlap'])]
         mapper = [settings['glomap'] if settings['solver'] == 'GLOMAP' else c, 'mapper',
                   '--database_path', db, '--image_path', images, '--output_path', str(self.folder / 'sparse')]
