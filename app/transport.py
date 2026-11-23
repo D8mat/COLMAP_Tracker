@@ -1,5 +1,5 @@
 """Shared frame controls. Source frames use indexed presentation timestamps, not guessed FPS."""
-import bisect,math,time
+import bisect,math,time,os
 from pathlib import Path
 from PySide6.QtCore import QObject,QProcess,Qt
 from PySide6.QtWidgets import QWidget,QHBoxLayout,QLabel,QSpinBox,QComboBox,QCheckBox,QPushButton
@@ -70,7 +70,7 @@ class Transport(QObject):
     def index_source(self,path):
         if self.source_path==path:self.refresh();return
         self.stop_indexer();self.source_path=path;self.stamps=[];self.source_frame=1;self.pending_frame=None;self.ranges.pop('source',None);self.refresh()
-        probe=Path(CONFIG['ffmpeg']).with_name('ffprobe.exe')
+        probe=Path(CONFIG['ffmpeg']).with_name('ffprobe.exe' if os.name=='nt' else 'ffprobe')
         if not probe.is_file():self.label.setText('Frame indexing needs ffprobe');return
         process=QProcess(self);self.indexer=process;process.setProgram(str(probe));process.setArguments(['-v','error','-select_streams','v:0','-show_entries','frame=best_effort_timestamp_time','-of','csv=p=0',path])
         process.finished.connect(lambda code,status,p=process,source=path:self.indexed(p,source,code));process.start();self.label.setText('Indexing frames…')

@@ -39,3 +39,6 @@ __pycache__/
 Thumbs.db
 
 /temp/
+
+/config.macos.json
+/.venv-macos/

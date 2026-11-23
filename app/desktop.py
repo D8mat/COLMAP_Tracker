@@ -17,7 +17,7 @@ from pipeline import CONFIG, Job, read_model
 if CONFIG.get('qt_packages'):
     sys.path.insert(0,CONFIG['qt_packages'])
 from PySide6.QtCore import Qt, QTimer, QObject, Signal, QThread, QUrl, QSize, QEvent
-from PySide6.QtGui import QSurfaceFormat, QPixmap
+from PySide6.QtGui import QSurfaceFormat, QPixmap, QDesktopServices
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QLabel,QPushButton,QLineEdit,QFileDialog,QSplitter,QSpinBox,QDoubleSpinBox,
     QComboBox,QCheckBox,QGroupBox,QFormLayout,QSlider,QProgressBar,QPlainTextEdit,QScrollArea,QMessageBox,QDockWidget,QAbstractSpinBox,QTextEdit)
@@ -85,7 +85,7 @@ class Window(QMainWindow):
         self.size=QSpinBox(); self.size.setRange(640,8192); self.size.setSingleStep(160); self.size.setValue(1920); fields.addRow('Max image size',self.size)
         self.seconds=QDoubleSpinBox(); self.seconds.setRange(0,99999); self.seconds.setSuffix(' s'); fields.addRow('First seconds¹',self.seconds)
         self.overlap=QSpinBox(); self.overlap.setRange(2,100); self.overlap.setValue(10); fields.addRow('Neighbour frames',self.overlap)
-        self.gpu=QCheckBox('Use GPU'); self.gpu.setChecked(True); fields.addRow(self.gpu)
+        self.gpu=QCheckBox('Use GPU'); self.gpu.setChecked(sys.platform!='darwin'); fields.addRow(self.gpu)
         self.mask=QLineEdit(); self.mask.setPlaceholderText('Optional static mask'); fields.addRow('Mask',self.mask)
         self.button('Choose mask…',self.choose_mask,fields)
         form.addWidget(self.settings)
@@ -521,7 +521,7 @@ class Window(QMainWindow):
             self.status.setText('Blender project exported.' if code==0 else 'Export failed. See export.log.')
     def open_folder(self):
         folder=self.job.folder if self.job else getattr(self,'last_job_folder',self.model_folder)
-        if folder and Path(folder).is_dir():os.startfile(str(folder))
+        if folder and Path(folder).is_dir():QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
     def export_blend(self):
         if not self.model_folder or self.export_process:return
         path,_=QFileDialog.getSaveFileName(self,'Export Blender project',str(ROOT/'tracked_camera.blend'),'Blender (*.blend)')

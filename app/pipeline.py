@@ -1,4 +1,5 @@
 """External processes only; Blender's timer polls these without blocking its UI."""
+import sys
 import json
 import os
 from pathlib import Path
@@ -10,9 +11,10 @@ from datetime import datetime
 
 ROOT = Path(__file__).resolve().parent.parent
 def load_config(root=ROOT):
-    config=json.loads((root/'config.example.json').read_text(encoding='utf-8-sig'))
-    if (root/'config.json').is_file():
-        config.update(json.loads((root/'config.json').read_text(encoding='utf-8-sig')))
+    config=json.loads((root/('config.macos.example.json' if sys.platform=='darwin' else 'config.example.json')).read_text(encoding='utf-8-sig'))
+    local=root/('config.macos.json' if sys.platform=='darwin' else 'config.json')
+    if local.is_file():
+        config.update(json.loads(local.read_text(encoding='utf-8-sig')))
     for key in ('colmap','glomap','ffmpeg','blender','python','qt_packages','sample_project'):
         value=config.get(key,'')
         if not value:continue

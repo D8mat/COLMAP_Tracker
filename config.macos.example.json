@@ -1,0 +1,9 @@
+{
+  "colmap": "colmap",
+  "glomap": "glomap",
+  "ffmpeg": "ffmpeg",
+  "blender": "/Applications/Blender.app/Contents/MacOS/Blender",
+  "python": ".venv-macos/bin/python",
+  "qt_packages": "",
+  "sample_project": ""
+}
